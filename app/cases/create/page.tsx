@@ -3,10 +3,13 @@ import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import DashboardHeader from '../../dashboard/DashboardHeader';
+import { casesAPI } from '../../../lib/api';
 
 export default function CreateCasePage() {
   const [user, setUser] = useState<any>(null);
   const [loading, setLoading] = useState(true);
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState('');
   const [formData, setFormData] = useState({
     title: '',
     category: '',
@@ -30,10 +33,51 @@ export default function CreateCasePage() {
     setLoading(false);
   }, [router]);
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    console.log('Creating case:', formData);
-    router.push('/dashboard');
+    setSubmitting(true);
+    setError('');
+
+    try {
+      // Validate form data
+      if (!formData.title.trim()) {
+        throw new Error('Case title is required');
+      }
+      if (!formData.category) {
+        throw new Error('Category is required');
+      }
+      if (!formData.subcategory) {
+        throw new Error('Subcategory is required');
+      }
+      if (!formData.clientNames.some(name => name.trim())) {
+        throw new Error('At least one client name is required');
+      }
+      if (!formData.description.trim()) {
+        throw new Error('Description is required');
+      }
+      if (!formData.assignedLawyer.trim()) {
+        throw new Error('Assigned lawyer is required');
+      }
+
+      // Filter out empty client names
+      const filteredClientNames = formData.clientNames.filter(name => name.trim());
+
+      const caseData = {
+        ...formData,
+        clientNames: filteredClientNames
+      };
+
+      const response = await casesAPI.create(caseData);
+      
+      if (response.success) {
+        router.push('/dashboard');
+      }
+    } catch (error: any) {
+      console.error('Case creation error:', error);
+      setError(error.message || 'Failed to create case');
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   const addClientName = () => {
@@ -98,9 +142,15 @@ export default function CreateCasePage() {
         </div>
 
         <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-8">
+          {error && (
+            <div className="mb-6 p-4 bg-red-50 border border-red-200 rounded-lg">
+              <p className="text-red-700 text-sm">{error}</p>
+            </div>
+          )}
+
           <form onSubmit={handleSubmit} className="space-y-6">
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">Case Title</label>
+              <label className="block text-sm font-medium text-gray-700 mb-2">Case Title *</label>
               <input
                 type="text"
                 required
@@ -108,17 +158,19 @@ export default function CreateCasePage() {
                 placeholder="Enter case title"
                 value={formData.title}
                 onChange={(e) => setFormData({...formData, title: e.target.value})}
+                disabled={submitting}
               />
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">Category</label>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Category *</label>
                 <select
                   required
                   className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent pr-8"
                   value={formData.category}
                   onChange={(e) => setFormData({...formData, category: e.target.value, subcategory: ''})}
+                  disabled={submitting}
                 >
                   <option value="">Select category</option>
                   {categories.map((category) => (
@@ -127,13 +179,13 @@ export default function CreateCasePage() {
                 </select>
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">Subcategory</label>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Subcategory *</label>
                 <select
                   required
                   className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent pr-8"
                   value={formData.subcategory}
                   onChange={(e) => setFormData({...formData, subcategory: e.target.value})}
-                  disabled={!selectedCategory}
+                  disabled={!selectedCategory || submitting}
                 >
                   <option value="">Select subcategory</option>
                   {selectedCategory?.subcategories.map((sub) => (
@@ -144,7 +196,7 @@ export default function CreateCasePage() {
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">Client Names</label>
+              <label className="block text-sm font-medium text-gray-700 mb-2">Client Names *</label>
               {formData.clientNames.map((clientName, index) => (
                 <div key={index} className="flex items-center space-x-2 mb-2">
                   <input
@@ -154,12 +206,14 @@ export default function CreateCasePage() {
                     placeholder={`Client ${index + 1} name`}
                     value={clientName}
                     onChange={(e) => updateClientName(index, e.target.value)}
+                    disabled={submitting}
                   />
                   {formData.clientNames.length > 1 && (
                     <button
                       type="button"
                       onClick={() => removeClientName(index)}
                       className="w-10 h-10 flex items-center justify-center text-red-600 hover:bg-red-50 rounded cursor-pointer"
+                      disabled={submitting}
                     >
                       <i className="ri-subtract-line"></i>
                     </button>
@@ -170,13 +224,14 @@ export default function CreateCasePage() {
                 type="button"
                 onClick={addClientName}
                 className="text-blue-600 hover:text-blue-700 text-sm font-medium cursor-pointer"
+                disabled={submitting}
               >
                 + Add Another Client
               </button>
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">Case Description</label>
+              <label className="block text-sm font-medium text-gray-700 mb-2">Case Description *</label>
               <textarea
                 required
                 className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
@@ -184,9 +239,10 @@ export default function CreateCasePage() {
                 placeholder="Describe the case details..."
                 value={formData.description}
                 onChange={(e) => setFormData({...formData, description: e.target.value})}
-                maxLength={500}
+                maxLength={1000}
+                disabled={submitting}
               />
-              <p className="text-xs text-gray-500 mt-1">{formData.description.length}/500 characters</p>
+              <p className="text-xs text-gray-500 mt-1">{formData.description.length}/1000 characters</p>
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
@@ -196,6 +252,7 @@ export default function CreateCasePage() {
                   className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent pr-8"
                   value={formData.priority}
                   onChange={(e) => setFormData({...formData, priority: e.target.value})}
+                  disabled={submitting}
                 >
                   <option value="High">High</option>
                   <option value="Medium">Medium</option>
@@ -203,7 +260,7 @@ export default function CreateCasePage() {
                 </select>
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">Assigned Lawyer</label>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Assigned Lawyer *</label>
                 <input
                   type="text"
                   required
@@ -211,6 +268,7 @@ export default function CreateCasePage() {
                   placeholder="Lawyer name"
                   value={formData.assignedLawyer}
                   onChange={(e) => setFormData({...formData, assignedLawyer: e.target.value})}
+                  disabled={submitting}
                 />
               </div>
               <div>
@@ -221,6 +279,7 @@ export default function CreateCasePage() {
                   placeholder="Court name (optional)"
                   value={formData.courtName}
                   onChange={(e) => setFormData({...formData, courtName: e.target.value})}
+                  disabled={submitting}
                 />
               </div>
             </div>
@@ -233,18 +292,30 @@ export default function CreateCasePage() {
                 placeholder="Judge name (optional)"
                 value={formData.judgeAssigned}
                 onChange={(e) => setFormData({...formData, judgeAssigned: e.target.value})}
+                disabled={submitting}
               />
             </div>
 
             <div className="flex items-center justify-end space-x-4 pt-6">
-              <Link href="/dashboard" className="px-6 py-3 text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-lg font-medium transition duration-200 whitespace-nowrap cursor-pointer">
+              <Link 
+                href="/dashboard" 
+                className="px-6 py-3 text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-lg font-medium transition duration-200 whitespace-nowrap cursor-pointer"
+              >
                 Cancel
               </Link>
               <button
                 type="submit"
-                className="px-6 py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium transition duration-200 whitespace-nowrap cursor-pointer"
+                disabled={submitting}
+                className="px-6 py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium transition duration-200 whitespace-nowrap cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
               >
-                Create Case
+                {submitting ? (
+                  <div className="flex items-center">
+                    <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin mr-2"></div>
+                    Creating Case...
+                  </div>
+                ) : (
+                  'Create Case'
+                )}
               </button>
             </div>
           </form>

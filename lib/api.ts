@@ -1,239 +1,304 @@
-// API configuration and mock data management
-// This file handles all data operations for the frontend-only application
+// API configuration for backend integration
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5001/api';
 
-export interface User {
-  id: string;
-  email: string;
-  name: string;
-  role: 'staff' | 'admin' | 'super_admin';
-}
+// API utility functions
+const apiRequest = async (endpoint: string, options: RequestInit = {}) => {
+  const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null;
+  
+  const defaultHeaders: HeadersInit = {
+    'Content-Type': 'application/json',
+  };
 
-export interface Case {
-  id: string;
-  referenceNumber: string;
-  fileNumber: string;
-  caseNumber: string;
-  title: string;
-  clientNames: string[];
-  category: string;
-  subcategory: string;
-  status: 'Active' | 'Pending' | 'Closed';
-  priority: 'High' | 'Medium' | 'Low';
-  description: string;
-  createdDate: string;
-  lastUpdated: string;
-  assignedLawyer: string;
-  nextHearingDate?: string;
-  lastHearingDate?: string;
-  courtName?: string;
-  judgeAssigned?: string;
-}
+  if (token) {
+    defaultHeaders.Authorization = `Bearer ${token}`;
+  }
 
-export interface Hearing {
-  id: string;
-  caseId: string;
-  date: string;
-  time: string;
-  type: string;
-  status: 'Scheduled' | 'Completed' | 'Cancelled' | 'Postponed';
-  judge: string;
-  courtroom: string;
-  outcome?: string;
-  notes?: string;
-}
+  const config: RequestInit = {
+    ...options,
+    headers: {
+      ...defaultHeaders,
+      ...options.headers,
+    },
+  };
 
-export interface Document {
-  id: string;
-  caseId: string;
-  name: string;
-  type: string;
-  uploadDate: string;
-  uploadedBy: string;
-  size: string;
-  status: 'Approved' | 'Pending Review' | 'In Review' | 'Required' | 'Rejected';
-  hearingDate?: string;
-}
+  try {
+    const response = await fetch(`${API_BASE_URL}${endpoint}`, config);
+    const data = await response.json();
 
-export interface Note {
-  id: string;
-  caseId: string;
-  content: string;
-  author: string;
-  date: string;
-  time: string;
-  type: string;
-  tags: string[];
-}
-
-// Mock data storage
-const STORAGE_KEYS = {
-  CASES: 'law_cases',
-  HEARINGS: 'law_hearings',
-  DOCUMENTS: 'law_documents',
-  NOTES: 'law_notes',
-  USERS: 'law_users'
-};
-
-// Helper functions for localStorage operations
-export const storage = {
-  get: (key: string) => {
-    if (typeof window !== 'undefined') {
-      const data = localStorage.getItem(key);
-      return data ? JSON.parse(data) : [];
+    if (!response.ok) {
+      throw new Error(data.message || 'An error occurred');
     }
-    return [];
-  },
-  
-  set: (key: string, data: any) => {
-    if (typeof window !== 'undefined') {
-      localStorage.setItem(key, JSON.stringify(data));
-    }
-  },
-  
-  add: (key: string, item: any) => {
-    const items = storage.get(key);
-    items.push(item);
-    storage.set(key, items);
-    return item;
-  },
-  
-  update: (key: string, id: string, updates: any) => {
-    const items = storage.get(key);
-    const index = items.findIndex((item: any) => item.id === id);
-    if (index !== -1) {
-      items[index] = { ...items[index], ...updates };
-      storage.set(key, items);
-      return items[index];
-    }
-    return null;
-  },
-  
-  delete: (key: string, id: string) => {
-    const items = storage.get(key);
-    const filtered = items.filter((item: any) => item.id !== id);
-    storage.set(key, filtered);
-    return true;
+
+    return data;
+  } catch (error) {
+    console.error('API Request Error:', error);
+    throw error;
   }
 };
 
-// API functions
-export const api = {
-  // Case operations
-  cases: {
-    getAll: (): Case[] => storage.get(STORAGE_KEYS.CASES),
-    getById: (id: string): Case | null => {
-      const cases = storage.get(STORAGE_KEYS.CASES);
-      return cases.find((c: Case) => c.id === id) || null;
-    },
-    create: (caseData: Omit<Case, 'id' | 'createdDate' | 'lastUpdated'>): Case => {
-      const newCase: Case = {
-        ...caseData,
-        id: Date.now().toString(),
-        createdDate: new Date().toISOString().split('T')[0],
-        lastUpdated: new Date().toISOString().split('T')[0],
-        referenceNumber: `LC-${new Date().getFullYear()}-${String(Date.now()).slice(-3)}`,
-        fileNumber: `F-${String(Date.now()).slice(-3)}-${new Date().getFullYear()}`,
-        caseNumber: `C-${String(new Date().getFullYear()).slice(-2)}-${String(Date.now()).slice(-3)}`
-      };
-      return storage.add(STORAGE_KEYS.CASES, newCase);
-    },
-    update: (id: string, updates: Partial<Case>): Case | null => {
-      return storage.update(STORAGE_KEYS.CASES, id, {
-        ...updates,
-        lastUpdated: new Date().toISOString().split('T')[0]
-      });
-    },
-    delete: (id: string): boolean => storage.delete(STORAGE_KEYS.CASES, id)
+// Auth API
+export const authAPI = {
+  login: async (email: string, password: string, role: string) => {
+    const response = await apiRequest('/auth/login', {
+      method: 'POST',
+      body: JSON.stringify({ email, password, role }),
+    });
+    
+    if (response.success && response.data.token) {
+      localStorage.setItem('token', response.data.token);
+      localStorage.setItem('user', JSON.stringify(response.data.user));
+    }
+    
+    return response;
   },
 
-  // Hearing operations
-  hearings: {
-    getByCaseId: (caseId: string): Hearing[] => {
-      const hearings = storage.get(STORAGE_KEYS.HEARINGS);
-      return hearings.filter((h: Hearing) => h.caseId === caseId);
-    },
-    create: (hearingData: Omit<Hearing, 'id'>): Hearing => {
-      const newHearing: Hearing = {
-        ...hearingData,
-        id: Date.now().toString()
-      };
-      return storage.add(STORAGE_KEYS.HEARINGS, newHearing);
-    },
-    update: (id: string, updates: Partial<Hearing>): Hearing | null => {
-      return storage.update(STORAGE_KEYS.HEARINGS, id, updates);
-    },
-    delete: (id: string): boolean => storage.delete(STORAGE_KEYS.HEARINGS, id)
+  logout: () => {
+    localStorage.removeItem('token');
+    localStorage.removeItem('user');
   },
 
-  // Document operations
-  documents: {
-    getByCaseId: (caseId: string): Document[] => {
-      const documents = storage.get(STORAGE_KEYS.DOCUMENTS);
-      return documents.filter((d: Document) => d.caseId === caseId);
-    },
-    create: (docData: Omit<Document, 'id' | 'uploadDate'>): Document => {
-      const newDoc: Document = {
-        ...docData,
-        id: Date.now().toString(),
-        uploadDate: new Date().toISOString().split('T')[0]
-      };
-      return storage.add(STORAGE_KEYS.DOCUMENTS, newDoc);
-    },
-    delete: (id: string): boolean => storage.delete(STORAGE_KEYS.DOCUMENTS, id)
+  getCurrentUser: async () => {
+    return await apiRequest('/auth/me');
   },
 
-  // Note operations
-  notes: {
-    getByCaseId: (caseId: string): Note[] => {
-      const notes = storage.get(STORAGE_KEYS.NOTES);
-      return notes.filter((n: Note) => n.caseId === caseId);
-    },
-    create: (noteData: Omit<Note, 'id' | 'date' | 'time'>): Note => {
-      const now = new Date();
-      const newNote: Note = {
-        ...noteData,
-        id: Date.now().toString(),
-        date: now.toISOString().split('T')[0],
-        time: now.toLocaleTimeString('en-US', { 
-          hour: '2-digit', 
-          minute: '2-digit',
-          hour12: true 
-        })
-      };
-      return storage.add(STORAGE_KEYS.NOTES, newNote);
-    },
-    update: (id: string, updates: Partial<Note>): Note | null => {
-      return storage.update(STORAGE_KEYS.NOTES, id, updates);
-    },
-    delete: (id: string): boolean => storage.delete(STORAGE_KEYS.NOTES, id)
+  register: async (userData: any) => {
+    return await apiRequest('/auth/register', {
+      method: 'POST',
+      body: JSON.stringify(userData),
+    });
+  },
+
+  changePassword: async (currentPassword: string, newPassword: string) => {
+    return await apiRequest('/auth/change-password', {
+      method: 'PUT',
+      body: JSON.stringify({ currentPassword, newPassword }),
+    });
   }
 };
 
-// Initialize with sample data if storage is empty
-export const initializeSampleData = () => {
-  if (storage.get(STORAGE_KEYS.CASES).length === 0) {
-    const sampleCases: Case[] = [
-      {
-        id: '1',
-        referenceNumber: 'LC-2024-001',
-        fileNumber: 'F-001-2024',
-        caseNumber: 'C-24-001',
-        title: 'Loan Settlement Dispute',
-        clientNames: ['Johnson & Associates', 'ABC Corporation'],
-        category: 'Financial',
-        subcategory: 'Loan Settlement',
-        status: 'Active',
-        priority: 'High',
-        description: 'Complex loan settlement case involving multiple parties and significant financial exposure.',
-        createdDate: '2024-01-15',
-        lastUpdated: '2024-12-15',
-        assignedLawyer: 'Sarah Johnson',
-        nextHearingDate: '2024-12-28',
-        lastHearingDate: '2024-11-15',
-        courtName: 'District Court Central',
-        judgeAssigned: 'Hon. Michael Roberts'
-      }
-    ];
-    storage.set(STORAGE_KEYS.CASES, sampleCases);
+// Cases API
+export const casesAPI = {
+  getAll: async (filters: any = {}) => {
+    const queryParams = new URLSearchParams();
+    Object.keys(filters).forEach(key => {
+      if (filters[key]) queryParams.append(key, filters[key]);
+    });
+    
+    return await apiRequest(`/cases?${queryParams.toString()}`);
+  },
+
+  getById: async (id: string) => {
+    return await apiRequest(`/cases/${id}`);
+  },
+
+  create: async (caseData: any) => {
+    return await apiRequest('/cases', {
+      method: 'POST',
+      body: JSON.stringify(caseData),
+    });
+  },
+
+  update: async (id: string, updates: any) => {
+    return await apiRequest(`/cases/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(updates),
+    });
+  },
+
+  delete: async (id: string) => {
+    return await apiRequest(`/cases/${id}`, {
+      method: 'DELETE',
+    });
+  },
+
+  getByCategory: async (category: string, subcategory?: string) => {
+    const queryParams = new URLSearchParams();
+    if (subcategory) queryParams.append('subcategory', subcategory);
+    
+    return await apiRequest(`/cases/category/${category}?${queryParams.toString()}`);
+  },
+
+  getStats: async () => {
+    return await apiRequest('/cases/stats/overview');
   }
 };
+
+// Hearings API
+export const hearingsAPI = {
+  getByCaseId: async (caseId: string, filters: any = {}) => {
+    const queryParams = new URLSearchParams();
+    Object.keys(filters).forEach(key => {
+      if (filters[key]) queryParams.append(key, filters[key]);
+    });
+    
+    return await apiRequest(`/hearings/case/${caseId}?${queryParams.toString()}`);
+  },
+
+  create: async (caseId: string, hearingData: any) => {
+    return await apiRequest(`/hearings/case/${caseId}`, {
+      method: 'POST',
+      body: JSON.stringify(hearingData),
+    });
+  },
+
+  update: async (id: string, updates: any) => {
+    return await apiRequest(`/hearings/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(updates),
+    });
+  },
+
+  delete: async (id: string) => {
+    return await apiRequest(`/hearings/${id}`, {
+      method: 'DELETE',
+    });
+  },
+
+  getUpcoming: async (days: number = 14) => {
+    return await apiRequest(`/hearings/upcoming?days=${days}`);
+  }
+};
+
+// Documents API
+export const documentsAPI = {
+  getByCaseId: async (caseId: string, filters: any = {}) => {
+    const queryParams = new URLSearchParams();
+    Object.keys(filters).forEach(key => {
+      if (filters[key]) queryParams.append(key, filters[key]);
+    });
+    
+    return await apiRequest(`/documents/case/${caseId}?${queryParams.toString()}`);
+  },
+
+  upload: async (caseId: string, formData: FormData) => {
+    const token = localStorage.getItem('token');
+    
+    const response = await fetch(`${API_BASE_URL}/documents/case/${caseId}/upload`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${token}`,
+      },
+      body: formData,
+    });
+
+    const data = await response.json();
+    
+    if (!response.ok) {
+      throw new Error(data.message || 'Upload failed');
+    }
+
+    return data;
+  },
+
+  download: async (id: string) => {
+    const token = localStorage.getItem('token');
+    
+    const response = await fetch(`${API_BASE_URL}/documents/${id}/download`, {
+      headers: {
+        'Authorization': `Bearer ${token}`,
+      },
+    });
+
+    if (!response.ok) {
+      throw new Error('Download failed');
+    }
+
+    return response.blob();
+  },
+
+  update: async (id: string, updates: any) => {
+    return await apiRequest(`/documents/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(updates),
+    });
+  },
+
+  delete: async (id: string) => {
+    return await apiRequest(`/documents/${id}`, {
+      method: 'DELETE',
+    });
+  }
+};
+
+// Notes API
+export const notesAPI = {
+  getByCaseId: async (caseId: string, filters: any = {}) => {
+    const queryParams = new URLSearchParams();
+    Object.keys(filters).forEach(key => {
+      if (filters[key]) queryParams.append(key, filters[key]);
+    });
+    
+    return await apiRequest(`/notes/case/${caseId}?${queryParams.toString()}`);
+  },
+
+  create: async (caseId: string, noteData: any) => {
+    return await apiRequest(`/notes/case/${caseId}`, {
+      method: 'POST',
+      body: JSON.stringify(noteData),
+    });
+  },
+
+  update: async (id: string, updates: any) => {
+    return await apiRequest(`/notes/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(updates),
+    });
+  },
+
+  delete: async (id: string) => {
+    return await apiRequest(`/notes/${id}`, {
+      method: 'DELETE',
+    });
+  }
+};
+
+// Dashboard API
+export const dashboardAPI = {
+  getOverview: async () => {
+    return await apiRequest('/dashboard/overview');
+  },
+
+  getUpcomingHearings: async (days: number = 14) => {
+    return await apiRequest(`/dashboard/upcoming-hearings?days=${days}`);
+  },
+
+  getInactiveCases: async () => {
+    return await apiRequest('/dashboard/inactive-cases');
+  },
+
+  getRecentActivity: async (days: number = 7) => {
+    return await apiRequest(`/dashboard/recent-activity?days=${days}`);
+  }
+};
+
+// Users API
+export const usersAPI = {
+  getAll: async (filters: any = {}) => {
+    const queryParams = new URLSearchParams();
+    Object.keys(filters).forEach(key => {
+      if (filters[key]) queryParams.append(key, filters[key]);
+    });
+    
+    return await apiRequest(`/users?${queryParams.toString()}`);
+  },
+
+  getById: async (id: string) => {
+    return await apiRequest(`/users/${id}`);
+  },
+
+  update: async (id: string, updates: any) => {
+    return await apiRequest(`/users/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(updates),
+    });
+  },
+
+  delete: async (id: string) => {
+    return await apiRequest(`/users/${id}`, {
+      method: 'DELETE',
+    });
+  }
+};
+
+// Export utility function
+export { apiRequest };
