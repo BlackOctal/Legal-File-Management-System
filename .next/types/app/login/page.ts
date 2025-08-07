@@ -1,4 +1,4 @@
-// File: /Users/janiduhimansa/Downloads/legal file Management/app/login/page.tsx
+// File: D:\SLIIT\_3_Year\2nd sem\agile project\Legal-File-Management-System\app\login\page.tsx
 import * as entry from '../../../../app/login/page.js'
 import type { ResolvingMetadata, ResolvingViewport } from 'next/dist/lib/metadata/types/metadata-interface.js'
 

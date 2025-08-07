@@ -1,4 +1,4 @@
-// File: /Users/janiduhimansa/Downloads/legal file Management/app/layout.tsx
+// File: D:\SLIIT\_3_Year\2nd sem\agile project\Legal-File-Management-System\app\layout.tsx
 import * as entry from '../../../app/layout.js'
 import type { ResolvingMetadata, ResolvingViewport } from 'next/dist/lib/metadata/types/metadata-interface.js'
 
