@@ -1,4 +1,4 @@
-// File: /Users/janiduhimansa/Downloads/legal file Management/app/category/[id]/page.tsx
+// File: C:\Legal-File-Management-System\app\category\[id]\page.tsx
 import * as entry from '../../../../../app/category/[id]/page.js'
 import type { ResolvingMetadata, ResolvingViewport } from 'next/dist/lib/metadata/types/metadata-interface.js'
 
