@@ -5,16 +5,34 @@ import Link from 'next/link';
 import DashboardHeader from '../dashboard/DashboardHeader';
 import { casesAPI } from '../../lib/api';
 
+interface Case {
+  _id: string;
+  id: string;
+  referenceNumber: string;
+  title: string;
+  clientNames: string[];
+  category: string;
+  subcategory: string;
+  status: string;
+  priority: string;
+  nextHearingDate?: string;
+  assignedLawyer: string;
+}
+
 export default function AllCasesPage() {
   const [user, setUser] = useState<any>(null);
+  const [cases, setCases] = useState<Case[]>([]);
   const [loading, setLoading] = useState(true);
-  const [cases, setCases] = useState<any[]>([]);
+  const [error, setError] = useState<string | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
   const [priorityFilter, setPriorityFilter] = useState('all');
   const [categoryFilter, setCategoryFilter] = useState('all');
-  const [pagination, setPagination] = useState<any>(null);
-  const [error, setError] = useState('');
+  const [pagination, setPagination] = useState({
+    currentPage: 1,
+    totalPages: 1,
+    totalCases: 0
+  });
   const router = useRouter();
 
   useEffect(() => {
@@ -25,29 +43,47 @@ export default function AllCasesPage() {
     }
     setUser(JSON.parse(userData));
     fetchCases();
-  }, [router, searchTerm, statusFilter, priorityFilter, categoryFilter]);
+  }, [router]);
 
-  const fetchCases = async () => {
+  // Separate useEffect for filters to avoid infinite loops
+  useEffect(() => {
+    if (user) {
+      fetchCases();
+    }
+  }, [searchTerm, statusFilter, priorityFilter, categoryFilter]);
+
+  const fetchCases = async (page = 1) => {
     try {
       setLoading(true);
-      setError('');
-
-      const filters: any = {};
-      if (searchTerm) filters.search = searchTerm;
-      if (statusFilter !== 'all') filters.status = statusFilter;
-      if (priorityFilter !== 'all') filters.priority = priorityFilter;
-      if (categoryFilter !== 'all') filters.category = categoryFilter;
-
-      const response = await casesAPI.getAll(filters);
+      setError(null);
       
-      if (response.success) {
-        setCases(response.data.cases || []);
-        setPagination(response.data.pagination);
-      }
-    } catch (error: any) {
+      const params = new URLSearchParams({
+        page: page.toString(),
+        limit: '10',
+        ...(searchTerm && { search: searchTerm }),
+        ...(statusFilter !== 'all' && { status: statusFilter }),
+        ...(priorityFilter !== 'all' && { priority: priorityFilter }),
+        ...(categoryFilter !== 'all' && { category: categoryFilter })
+      });
+
+      console.log('Fetching cases with params:', params.toString());
+      const data = await casesAPI.getAll(params);
+      
+      console.log('API Response:', data);
+      
+      // Handle different response structures
+      const casesData = data.data?.cases || data.cases || [];
+      const paginationData = data.data?.pagination || data.pagination || {
+        currentPage: 1,
+        totalPages: 1,
+        totalCases: casesData.length
+      };
+
+      setCases(casesData);
+      setPagination(paginationData);
+    } catch (error) {
       console.error('Error fetching cases:', error);
-      setError(error.message || 'Failed to fetch cases');
-      setCases([]);
+      setError(error instanceof Error ? error.message : 'Failed to load cases');
     } finally {
       setLoading(false);
     }
@@ -71,12 +107,7 @@ export default function AllCasesPage() {
     }
   };
 
-  const formatDate = (dateString: string) => {
-    if (!dateString) return 'Not scheduled';
-    return new Date(dateString).toLocaleDateString();
-  };
-
-  if (loading && cases.length === 0) {
+  if (loading) {
     return (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center">
         <div className="text-center">
@@ -109,13 +140,23 @@ export default function AllCasesPage() {
           </div>
         </div>
 
-        <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
-          {error && (
-            <div className="mb-6 p-4 bg-red-50 border border-red-200 rounded-lg">
-              <p className="text-red-700 text-sm">{error}</p>
+        {error && (
+          <div className="bg-red-50 border border-red-200 rounded-lg p-4 mb-6">
+            <div className="flex items-center">
+              <i className="ri-error-warning-line text-red-500 mr-2"></i>
+              <span className="text-red-700">{error}</span>
+              <button 
+                onClick={() => fetchCases()}
+                className="ml-auto text-red-600 hover:text-red-700 text-sm font-medium"
+              >
+                Retry
+              </button>
             </div>
-          )}
+          </div>
+        )}
 
+        <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+          {/* Search and Filter Section */}
           <div className="flex flex-col lg:flex-row gap-4 mb-6">
             <div className="flex-1">
               <div className="relative">
@@ -166,6 +207,7 @@ export default function AllCasesPage() {
             </div>
           </div>
 
+          {/* Cases Table */}
           <div className="overflow-x-auto">
             <table className="w-full">
               <thead>
@@ -183,34 +225,27 @@ export default function AllCasesPage() {
               </thead>
               <tbody>
                 {cases.map((case_item) => (
-                  <tr key={case_item._id} className={`border-b border-gray-100 hover:bg-gray-50 ${
-                    case_item.isInactive ? 'bg-red-50' : ''
-                  }`}>
+                  <tr key={case_item._id || case_item.id} className="border-b border-gray-100 hover:bg-gray-50">
                     <td className="py-3 px-2">
-                      <Link href={`/cases/${case_item._id}`} className="text-blue-600 hover:text-blue-700 font-medium cursor-pointer">
+                      <Link href={`/cases/${case_item._id || case_item.id}`} className="text-blue-600 hover:text-blue-700 font-medium cursor-pointer">
                         {case_item.referenceNumber}
                       </Link>
-                      {case_item.isInactive && (
-                        <span className="ml-2 text-xs bg-red-100 text-red-700 px-2 py-1 rounded-full">
-                          Inactive
-                        </span>
-                      )}
                     </td>
                     <td className="py-3 px-2 text-gray-900 font-medium">{case_item.title}</td>
                     <td className="py-3 px-2">
                       <div className="space-y-1">
-                        {case_item.clientNames?.map((name: string, index: number) => (
+                        {case_item.clientNames?.map((name, index) => (
                           <div key={index} className="text-sm text-gray-700">{name}</div>
-                        )) || <span className="text-gray-500">No clients</span>}
+                        ))}
                       </div>
                     </td>
                     <td className="py-3 px-2">
-                      <div className="text-sm text-gray-700 capitalize">{case_item.category}</div>
+                      <div className="text-sm text-gray-700">{case_item.category}</div>
                       <div className="text-xs text-gray-500">{case_item.subcategory}</div>
                     </td>
                     <td className="py-3 px-2 text-gray-700">{case_item.assignedLawyer}</td>
                     <td className="py-3 px-2 text-gray-600 text-sm">
-                      {formatDate(case_item.nextHearingDate)}
+                      {case_item.nextHearingDate || 'Not scheduled'}
                     </td>
                     <td className="py-3 px-2">
                       <span className={`px-2 py-1 rounded-full text-xs font-medium ${getStatusColor(case_item.status)}`}>
@@ -224,10 +259,10 @@ export default function AllCasesPage() {
                     </td>
                     <td className="py-3 px-2">
                       <div className="flex items-center space-x-2">
-                        <Link href={`/cases/${case_item._id}`} className="text-blue-600 hover:text-blue-700 text-sm cursor-pointer">
+                        <Link href={`/cases/${case_item._id || case_item.id}`} className="text-blue-600 hover:text-blue-700 text-sm cursor-pointer">
                           View
                         </Link>
-                        <Link href={`/cases/${case_item._id}/edit`} className="text-green-600 hover:text-green-700 text-sm cursor-pointer">
+                        <Link href={`/cases/${case_item._id || case_item.id}/edit`} className="text-green-600 hover:text-green-700 text-sm cursor-pointer">
                           Edit
                         </Link>
                       </div>
@@ -241,29 +276,34 @@ export default function AllCasesPage() {
           {cases.length === 0 && !loading && (
             <div className="text-center py-8">
               <i className="ri-folder-open-line text-4xl text-gray-400 mb-4"></i>
-              <p className="text-gray-600">
-                {error ? 'Error loading cases' : 'No cases found matching your criteria'}
-              </p>
-              {!error && (
-                <Link href="/cases/create" className="mt-4 inline-block bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg">
-                  Create First Case
-                </Link>
-              )}
+              <p className="text-gray-600">No cases found matching your criteria</p>
             </div>
           )}
 
-          {pagination && (
-            <div className="mt-6 flex items-center justify-between text-sm text-gray-600">
-              <p>
-                Showing {cases.length} of {pagination.totalCases} cases
-              </p>
-              {pagination.totalPages > 1 && (
-                <div className="flex items-center space-x-2">
-                  <span>Page {pagination.currentPage} of {pagination.totalPages}</span>
-                </div>
-              )}
-            </div>
-          )}
+          {/* Pagination */}
+          <div className="mt-6 flex items-center justify-between text-sm text-gray-600">
+            <p>Showing {cases.length} of {pagination.totalCases} cases</p>
+            
+            {pagination.totalPages > 1 && (
+              <div className="flex items-center space-x-2">
+                <button
+                  onClick={() => fetchCases(pagination.currentPage - 1)}
+                  disabled={pagination.currentPage === 1}
+                  className="px-3 py-1 border border-gray-300 rounded text-sm disabled:opacity-50"
+                >
+                  Previous
+                </button>
+                <span>Page {pagination.currentPage} of {pagination.totalPages}</span>
+                <button
+                  onClick={() => fetchCases(pagination.currentPage + 1)}
+                  disabled={pagination.currentPage === pagination.totalPages}
+                  className="px-3 py-1 border border-gray-300 rounded text-sm disabled:opacity-50"
+                >
+                  Next
+                </button>
+              </div>
+            )}
+          </div>
         </div>
       </div>
     </div>

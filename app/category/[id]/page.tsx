@@ -1,17 +1,10 @@
-
 import CategoryDetail from './CategoryDetail';
 
-export async function generateStaticParams() {
-  return [
-    { id: 'financial' },
-    { id: 'deeds' },
-    { id: 'criminal' },
-    { id: 'civil' },
-    { id: 'family' },
-    { id: 'corporate' },
-  ];
+interface CategoryPageProps {
+  params: Promise<{ id: string }>;
 }
 
-export default function CategoryPage({ params }: { params: { id: string } }) {
-  return <CategoryDetail categoryId={params.id} />;
+export default async function CategoryPage({ params }: CategoryPageProps) {
+  const { id } = await params;
+  return <CategoryDetail categoryId={id} />;
 }

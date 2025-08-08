@@ -1,4 +1,3 @@
-
 'use client';
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
@@ -8,37 +7,42 @@ import HearingHistory from './HearingHistory';
 import AddHearingModal from './AddHearingModal';
 import DocumentsSection from './DocumentsSection';
 import NotesSection from './NotesSection';
+import { casesAPI } from '../../../lib/api';
 
 interface CaseDetailProps {
   caseId: string;
 }
 
-const mockCase = {
-  id: '1',
-  referenceNumber: 'LC-2024-001',
-  fileNumber: 'F-001-2024',
-  caseNumber: 'C-24-001',
-  title: 'Loan Settlement Dispute',
-  clientNames: ['Johnson & Associates', 'ABC Corporation'],
-  category: 'Financial',
-  subcategory: 'Loan Settlement',
-  status: 'Active',
-  priority: 'High',
-  description: 'Complex loan settlement case involving multiple parties and significant financial exposure. Requires careful documentation and strategic approach.',
-  createdDate: '2024-01-15',
-  lastUpdated: '2024-12-15',
-  assignedLawyer: 'Sarah Johnson',
-  nextHearingDate: '2024-12-28',
-  lastHearingDate: '2024-11-15',
-  courtName: 'District Court Central',
-  judgeAssigned: 'Hon. Michael Roberts'
-};
+interface CaseData {
+  _id: string;
+  id: string;
+  referenceNumber: string;
+  fileNumber: string;
+  caseNumber: string;
+  title: string;
+  clientNames: string[];
+  category: string;
+  subcategory: string;
+  status: string;
+  priority: string;
+  description: string;
+  createdDate: string;
+  lastUpdated: string;
+  assignedLawyer: string;
+  nextHearingDate?: string;
+  lastHearingDate?: string;
+  courtName?: string;
+  judgeAssigned?: string;
+}
 
 export default function CaseDetail({ caseId }: CaseDetailProps) {
   const [user, setUser] = useState<any>(null);
+  const [caseData, setCaseData] = useState<CaseData | null>(null);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState('overview');
   const [showAddHearing, setShowAddHearing] = useState(false);
+  const [refreshTrigger, setRefreshTrigger] = useState(0);
   const router = useRouter();
 
   useEffect(() => {
@@ -48,8 +52,55 @@ export default function CaseDetail({ caseId }: CaseDetailProps) {
       return;
     }
     setUser(JSON.parse(userData));
-    setLoading(false);
-  }, [router]);
+    fetchCaseData();
+  }, [router, caseId, refreshTrigger]);
+
+  const fetchCaseData = async () => {
+    try {
+      setLoading(true);
+      setError(null);
+      
+      const data = await casesAPI.getById(caseId);
+      const caseInfo = data.data?.case || data.case || data;
+      setCaseData(caseInfo);
+    } catch (error) {
+      console.error('Error fetching case:', error);
+      setError(error instanceof Error ? error.message : 'Failed to load case');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleDeleteCase = async () => {
+    if (user.role !== 'super_admin') {
+      alert('Only Super Admin can delete cases');
+      return;
+    }
+    
+    if (!confirm('Are you sure you want to delete this case? This action cannot be undone.')) {
+      return;
+    }
+
+    try {
+      console.log('Attempting to delete case:', caseId);
+      await casesAPI.delete(caseId);
+      
+      alert('Case deleted successfully');
+      router.push('/cases');
+    } catch (error) {
+      console.error('Error deleting case:', error);
+      alert(`Failed to delete case: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
+  };
+
+  const handleRefresh = () => {
+    setRefreshTrigger(prev => prev + 1);
+  };
+
+  const handleHearingAdded = () => {
+    setShowAddHearing(false);
+    handleRefresh();
+  };
 
   if (loading) {
     return (
@@ -62,18 +113,32 @@ export default function CaseDetail({ caseId }: CaseDetailProps) {
     );
   }
 
-  if (!user) return null;
+  if (error) {
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+        <div className="text-center">
+          <div className="text-red-500 mb-4">
+            <i className="ri-error-warning-line text-4xl"></i>
+          </div>
+          <h2 className="text-xl font-semibold text-gray-900 mb-2">Error Loading Case</h2>
+          <p className="text-gray-600 mb-4">{error}</p>
+          <div className="space-x-4">
+            <button 
+              onClick={fetchCaseData}
+              className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg"
+            >
+              Try Again
+            </button>
+            <Link href="/cases" className="text-blue-600 hover:text-blue-700">
+              Back to Cases
+            </Link>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
-  const handleDeleteCase = () => {
-    if (user.role !== 'super_admin') {
-      alert('Only Super Admin can delete cases');
-      return;
-    }
-    if (confirm('Are you sure you want to delete this case? This action cannot be undone.')) {
-      // Handle case deletion
-      router.push('/dashboard');
-    }
-  };
+  if (!user || !caseData) return null;
 
   const getStatusColor = (status: string) => {
     switch (status) {
@@ -99,20 +164,20 @@ export default function CaseDetail({ caseId }: CaseDetailProps) {
       
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         <div className="mb-8">
-          <Link href="/dashboard" className="text-blue-600 hover:text-blue-700 text-sm font-medium mb-4 inline-block cursor-pointer">
-            ← Back to Dashboard
+          <Link href="/cases" className="text-blue-600 hover:text-blue-700 text-sm font-medium mb-4 inline-block cursor-pointer">
+            ← Back to Cases
           </Link>
           
           <div className="flex items-center justify-between">
             <div>
-              <h1 className="text-3xl font-bold text-gray-900 mb-2">{mockCase.title}</h1>
+              <h1 className="text-3xl font-bold text-gray-900 mb-2">{caseData.title}</h1>
               <div className="flex items-center space-x-4">
-                <span className="text-lg font-medium text-gray-700">{mockCase.referenceNumber}</span>
-                <span className={`px-3 py-1 rounded-full text-sm font-medium ${getStatusColor(mockCase.status)}`}>
-                  {mockCase.status}
+                <span className="text-lg font-medium text-gray-700">{caseData.referenceNumber}</span>
+                <span className={`px-3 py-1 rounded-full text-sm font-medium ${getStatusColor(caseData.status)}`}>
+                  {caseData.status}
                 </span>
-                <span className={`px-3 py-1 rounded-full text-sm font-medium ${getPriorityColor(mockCase.priority)}`}>
-                  {mockCase.priority}
+                <span className={`px-3 py-1 rounded-full text-sm font-medium ${getPriorityColor(caseData.priority)}`}>
+                  {caseData.priority}
                 </span>
               </div>
             </div>
@@ -167,34 +232,34 @@ export default function CaseDetail({ caseId }: CaseDetailProps) {
                     <div className="grid grid-cols-2 gap-4">
                       <div>
                         <label className="text-sm font-medium text-gray-500">Reference Number</label>
-                        <p className="text-gray-900">{mockCase.referenceNumber}</p>
+                        <p className="text-gray-900">{caseData.referenceNumber}</p>
                       </div>
                       <div>
                         <label className="text-sm font-medium text-gray-500">File Number</label>
-                        <p className="text-gray-900">{mockCase.fileNumber}</p>
+                        <p className="text-gray-900">{caseData.fileNumber}</p>
                       </div>
                     </div>
                     <div className="grid grid-cols-2 gap-4">
                       <div>
                         <label className="text-sm font-medium text-gray-500">Case Number</label>
-                        <p className="text-gray-900">{mockCase.caseNumber}</p>
+                        <p className="text-gray-900">{caseData.caseNumber}</p>
                       </div>
                       <div>
                         <label className="text-sm font-medium text-gray-500">Category</label>
-                        <p className="text-gray-900">{mockCase.category} - {mockCase.subcategory}</p>
+                        <p className="text-gray-900">{caseData.category} - {caseData.subcategory}</p>
                       </div>
                     </div>
                     <div>
                       <label className="text-sm font-medium text-gray-500">Client Names</label>
                       <div className="space-y-1">
-                        {mockCase.clientNames.map((name, index) => (
+                        {caseData.clientNames.map((name, index) => (
                           <p key={index} className="text-gray-900">{name}</p>
                         ))}
                       </div>
                     </div>
                     <div>
                       <label className="text-sm font-medium text-gray-500">Description</label>
-                      <p className="text-gray-900">{mockCase.description}</p>
+                      <p className="text-gray-900">{caseData.description}</p>
                     </div>
                   </div>
                 </div>
@@ -205,35 +270,35 @@ export default function CaseDetail({ caseId }: CaseDetailProps) {
                     <div className="grid grid-cols-2 gap-4">
                       <div>
                         <label className="text-sm font-medium text-gray-500">Assigned Lawyer</label>
-                        <p className="text-gray-900">{mockCase.assignedLawyer}</p>
+                        <p className="text-gray-900">{caseData.assignedLawyer}</p>
                       </div>
                       <div>
                         <label className="text-sm font-medium text-gray-500">Judge Assigned</label>
-                        <p className="text-gray-900">{mockCase.judgeAssigned}</p>
+                        <p className="text-gray-900">{caseData.judgeAssigned || 'Not assigned'}</p>
                       </div>
                     </div>
                     <div>
                       <label className="text-sm font-medium text-gray-500">Court Name</label>
-                      <p className="text-gray-900">{mockCase.courtName}</p>
+                      <p className="text-gray-900">{caseData.courtName || 'Not specified'}</p>
                     </div>
                     <div className="grid grid-cols-2 gap-4">
                       <div>
                         <label className="text-sm font-medium text-gray-500">Next Hearing</label>
-                        <p className="text-gray-900">{mockCase.nextHearingDate}</p>
+                        <p className="text-gray-900">{caseData.nextHearingDate || 'Not scheduled'}</p>
                       </div>
                       <div>
                         <label className="text-sm font-medium text-gray-500">Last Hearing</label>
-                        <p className="text-gray-900">{mockCase.lastHearingDate}</p>
+                        <p className="text-gray-900">{caseData.lastHearingDate || 'No previous hearing'}</p>
                       </div>
                     </div>
                     <div className="grid grid-cols-2 gap-4">
                       <div>
                         <label className="text-sm font-medium text-gray-500">Created Date</label>
-                        <p className="text-gray-900">{mockCase.createdDate}</p>
+                        <p className="text-gray-900">{caseData.createdDate}</p>
                       </div>
                       <div>
                         <label className="text-sm font-medium text-gray-500">Last Updated</label>
-                        <p className="text-gray-900">{mockCase.lastUpdated}</p>
+                        <p className="text-gray-900">{caseData.lastUpdated}</p>
                       </div>
                     </div>
                   </div>
@@ -244,20 +309,25 @@ export default function CaseDetail({ caseId }: CaseDetailProps) {
             {activeTab === 'hearings' && (
               <div>
                 <div className="flex items-center justify-between mb-6">
-                  <h3 className="text-lg font-semibold text-gray-900">Hearing History</h3>
+                  {/* <h3 className="text-lg font-semibold text-gray-900">Hearing History</h3>
                   <button
                     onClick={() => setShowAddHearing(true)}
                     className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg font-medium transition duration-200 whitespace-nowrap cursor-pointer"
                   >
                     + Schedule Hearing
-                  </button>
+                  </button> */}
                 </div>
-                <HearingHistory caseId={caseId} />
+                <HearingHistory caseId={caseId} refreshTrigger={refreshTrigger} />
               </div>
             )}
 
-            {activeTab === 'documents' && <DocumentsSection caseId={caseId} />}
-            {activeTab === 'notes' && <NotesSection caseId={caseId} />}
+            {activeTab === 'documents' && (
+              <DocumentsSection caseId={caseId} refreshTrigger={refreshTrigger} />
+            )}
+
+            {activeTab === 'notes' && (
+              <NotesSection caseId={caseId} refreshTrigger={refreshTrigger} />
+            )}
           </div>
         </div>
       </div>
@@ -266,6 +336,7 @@ export default function CaseDetail({ caseId }: CaseDetailProps) {
         <AddHearingModal
           caseId={caseId}
           onClose={() => setShowAddHearing(false)}
+          onHearingAdded={handleHearingAdded}
         />
       )}
     </div>

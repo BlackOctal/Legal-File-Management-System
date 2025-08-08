@@ -4,6 +4,22 @@ const { body, validationResult } = require('express-validator');
 const User = require('../models/User');
 const { authenticateToken } = require('../middleware/auth');
 
+// Try to import optional services
+let Notification = null;
+let emailService = null;
+
+try {
+  Notification = require('../models/Notification');
+} catch (error) {
+  console.log('⚠️ Notification model not found - notifications disabled');
+}
+
+try {
+  emailService = require('../services/emailService');
+} catch (error) {
+  console.log('⚠️ Email service not found - email notifications disabled');
+}
+
 const router = express.Router();
 
 // Generate JWT token
@@ -11,6 +27,16 @@ const generateToken = (userId) => {
   return jwt.sign({ userId }, process.env.JWT_SECRET, {
     expiresIn: process.env.JWT_EXPIRES_IN || '7d'
   });
+};
+
+// Generate temporary password
+const generateTempPassword = () => {
+  const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789!@#$%^&*';
+  let password = '';
+  for (let i = 0; i < 12; i++) {
+    password += chars.charAt(Math.floor(Math.random() * chars.length));
+  }
+  return password;
 };
 
 // @desc    Register user (only admins and super_admin can register new users)
@@ -28,6 +54,7 @@ router.post('/register', [
     .withMessage('Please enter a valid email')
     .normalizeEmail(),
   body('password')
+    .optional()
     .isLength({ min: 6 })
     .withMessage('Password must be at least 6 characters'),
   body('role')
@@ -40,7 +67,11 @@ router.post('/register', [
   body('department')
     .optional()
     .isLength({ max: 100 })
-    .withMessage('Department name cannot exceed 100 characters')
+    .withMessage('Department name cannot exceed 100 characters'),
+  body('sendEmail')
+    .optional()
+    .isBoolean()
+    .withMessage('sendEmail must be boolean')
 ], async (req, res) => {
   try {
     // Check validation errors
@@ -53,7 +84,7 @@ router.post('/register', [
       });
     }
 
-    const { name, email, password, role, phoneNumber, department } = req.body;
+    const { name, email, password, role, phoneNumber, department, sendEmail = true } = req.body;
 
     // Check if user can create this role
     if (!req.user.canPerformAction('manage_users', role)) {
@@ -72,11 +103,14 @@ router.post('/register', [
       });
     }
 
+    // Generate temporary password if not provided
+    const tempPassword = password || generateTempPassword();
+
     // Create user
     const user = new User({
       name,
       email,
-      password,
+      password: tempPassword,
       role,
       phoneNumber,
       department,
@@ -85,9 +119,98 @@ router.post('/register', [
 
     await user.save();
 
+    console.log('✅ User created successfully:', email, 'Role:', role);
+
+    // Create welcome notification for the new user (if Notification model exists)
+    if (Notification) {
+      try {
+        await Notification.createNotification({
+          recipient: user._id,
+          type: 'staff_registered',
+          title: 'Welcome to Law Case Management System',
+          message: `Your account has been created by ${req.user.name}. Please check your email for login details.`,
+          priority: 'high',
+          createdBy: req.user._id,
+          data: {
+            userId: user._id,
+            metadata: {
+              createdBy: req.user.name,
+              role: user.role
+            }
+          }
+        });
+        console.log('✅ Welcome notification created for user');
+      } catch (notificationError) {
+        console.error('⚠️ Error creating welcome notification:', notificationError);
+        // Don't fail the registration if notification fails
+      }
+    }
+
+    // Send email notification if requested and email service is available
+    let emailSent = false;
+    if (sendEmail && emailService) {
+      try {
+        console.log('📧 Attempting to send registration email to:', email);
+        
+        emailSent = await emailService.sendStaffRegistrationNotification(
+          email,
+          {
+            name: user.name,
+            role: user.role,
+            department: user.department
+          },
+          tempPassword,
+          req.user.name
+        );
+
+        if (emailSent) {
+          console.log('✅ Registration email sent successfully to:', email);
+        } else {
+          console.log('⚠️ Registration email failed to send to:', email);
+        }
+      } catch (emailError) {
+        console.error('❌ Error sending registration email:', emailError);
+        // Don't fail the registration if email fails
+      }
+    }
+
+    // Notify admins about new user registration (if Notification model exists)
+    if (Notification) {
+      try {
+        const adminUsers = await User.find({ 
+          role: { $in: ['admin', 'super_admin'] }, 
+          status: 'active',
+          _id: { $ne: user._id } // Don't notify the user themselves
+        });
+
+        for (const admin of adminUsers) {
+          await Notification.createNotification({
+            recipient: admin._id,
+            type: 'staff_registered',
+            title: 'New User Registered',
+            message: `A new ${role} user "${name}" has been registered by ${req.user.name}.`,
+            priority: 'medium',
+            createdBy: req.user._id,
+            data: {
+              userId: user._id,
+              metadata: {
+                newUserName: name,
+                newUserEmail: email,
+                newUserRole: role,
+                registeredBy: req.user.name
+              }
+            }
+          });
+        }
+        console.log('✅ Admin notifications created for new user registration');
+      } catch (adminNotificationError) {
+        console.error('⚠️ Error creating admin notifications:', adminNotificationError);
+      }
+    }
+
     res.status(201).json({
       success: true,
-      message: 'User created successfully',
+      message: `User created successfully${emailSent ? ' and welcome email sent' : emailService ? ' (email notification failed)' : ''}`,
       data: {
         user: {
           id: user._id,
@@ -95,16 +218,21 @@ router.post('/register', [
           email: user.email,
           role: user.role,
           status: user.status,
+          department: user.department,
+          phoneNumber: user.phoneNumber,
           createdAt: user.createdAt
-        }
+        },
+        emailSent: emailSent,
+        tempPassword: password ? undefined : tempPassword // Only show temp password if it was generated
       }
     });
 
   } catch (error) {
-    console.error('Registration error:', error);
+    console.error('❌ Registration error:', error);
     res.status(500).json({
       success: false,
-      message: 'Error creating user'
+      message: 'Error creating user',
+      error: process.env.NODE_ENV === 'development' ? error.message : undefined
     });
   }
 });
@@ -167,6 +295,8 @@ router.post('/login', [
     // Generate token
     const token = generateToken(user._id);
 
+    console.log('✅ User logged in successfully:', email);
+
     res.json({
       success: true,
       message: 'Login successful',
@@ -186,7 +316,7 @@ router.post('/login', [
     });
 
   } catch (error) {
-    console.error('Login error:', error);
+    console.error('❌ Login error:', error);
     res.status(500).json({
       success: false,
       message: 'Error during login'
@@ -209,7 +339,7 @@ router.get('/me', authenticateToken, async (req, res) => {
       }
     });
   } catch (error) {
-    console.error('Get current user error:', error);
+    console.error('❌ Get current user error:', error);
     res.status(500).json({
       success: false,
       message: 'Error fetching user data'
@@ -264,7 +394,7 @@ router.put('/profile', [
     });
 
   } catch (error) {
-    console.error('Profile update error:', error);
+    console.error('❌ Profile update error:', error);
     res.status(500).json({
       success: false,
       message: 'Error updating profile'
@@ -312,13 +442,15 @@ router.put('/change-password', [
     user.password = newPassword;
     await user.save();
 
+    console.log('✅ Password changed successfully for user:', user.email);
+
     res.json({
       success: true,
       message: 'Password changed successfully'
     });
 
   } catch (error) {
-    console.error('Change password error:', error);
+    console.error('❌ Change password error:', error);
     res.status(500).json({
       success: false,
       message: 'Error changing password'
@@ -339,10 +471,80 @@ router.post('/refresh', authenticateToken, async (req, res) => {
     });
 
   } catch (error) {
-    console.error('Token refresh error:', error);
+    console.error('❌ Token refresh error:', error);
     res.status(500).json({
       success: false,
       message: 'Error refreshing token'
+    });
+  }
+});
+
+// @desc    Test email service
+// @route   POST /api/auth/test-email
+// @access  Private (Admin+)
+router.post('/test-email', [
+  authenticateToken,
+  body('email')
+    .isEmail()
+    .withMessage('Please enter a valid email')
+    .normalizeEmail(),
+  body('message')
+    .optional()
+    .isLength({ max: 500 })
+    .withMessage('Message cannot exceed 500 characters')
+], async (req, res) => {
+  try {
+    // Check if user has permission
+    if (!['admin', 'super_admin'].includes(req.user.role)) {
+      return res.status(403).json({
+        success: false,
+        message: 'Only administrators can test email service'
+      });
+    }
+
+    if (!emailService) {
+      return res.status(503).json({
+        success: false,
+        message: 'Email service is not available'
+      });
+    }
+
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      return res.status(400).json({
+        success: false,
+        message: 'Validation failed',
+        errors: errors.array()
+      });
+    }
+
+    const { email, message } = req.body;
+
+    console.log('📧 Testing email service...');
+    const result = await emailService.sendTestEmail(email, message);
+
+    if (result.success) {
+      res.json({
+        success: true,
+        message: 'Test email sent successfully',
+        data: {
+          emailId: result.data?.id,
+          recipient: email
+        }
+      });
+    } else {
+      res.status(500).json({
+        success: false,
+        message: 'Test email failed to send',
+        error: result.error
+      });
+    }
+
+  } catch (error) {
+    console.error('❌ Test email error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Error testing email service'
     });
   }
 });

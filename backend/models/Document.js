@@ -1,3 +1,4 @@
+// models/Document.js
 const mongoose = require('mongoose');
 
 const documentSchema = new mongoose.Schema({
@@ -21,8 +22,7 @@ const documentSchema = new mongoose.Schema({
   },
   filename: {
     type: String,
-    required: true,
-    unique: true
+    required: true
   },
   type: {
     type: String,
@@ -104,9 +104,25 @@ const documentSchema = new mongoose.Schema({
     type: mongoose.Schema.Types.ObjectId,
     ref: 'User'
   },
-  path: {
+  // Storage information
+  storageType: {
     type: String,
-    required: true
+    enum: ['local', 's3'],
+    default: 'local'
+  },
+  // For local storage
+  path: {
+    type: String
+  },
+  // For S3 storage
+  s3Key: {
+    type: String
+  },
+  s3Bucket: {
+    type: String
+  },
+  s3Location: {
+    type: String
   }
 }, {
   timestamps: true
@@ -120,6 +136,7 @@ documentSchema.index({ status: 1 });
 documentSchema.index({ uploadedBy: 1 });
 documentSchema.index({ filename: 1 });
 documentSchema.index({ createdAt: -1 });
+documentSchema.index({ s3Key: 1 });
 
 // Virtual for file extension
 documentSchema.virtual('fileExtension').get(function() {
@@ -156,6 +173,16 @@ documentSchema.methods.canUserAccess = function(userRole) {
   if (this.accessLevel === 'internal' && ['staff', 'admin', 'super_admin'].includes(userRole)) return true;
   if (this.accessLevel === 'restricted' && ['admin', 'super_admin'].includes(userRole)) return true;
   return false;
+};
+
+// Method to get storage identifier (path for local, s3Key for S3)
+documentSchema.methods.getStorageIdentifier = function() {
+  return this.storageType === 's3' ? this.s3Key : this.path;
+};
+
+// Method to check if document is stored in S3
+documentSchema.methods.isS3Storage = function() {
+  return this.storageType === 's3';
 };
 
 // Static method to get documents by case

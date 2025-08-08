@@ -135,6 +135,21 @@ router.get('/:id', async (req, res) => {
 // @route   POST /api/cases
 // @access  Private
 router.post('/', [
+  body('referenceNumber')
+    .notEmpty()
+    .withMessage('Reference number is required')
+    .isLength({ max: 50 })
+    .withMessage('Reference number cannot exceed 50 characters'),
+  body('fileNumber')
+    .notEmpty()
+    .withMessage('File number is required')
+    .isLength({ max: 50 })
+    .withMessage('File number cannot exceed 50 characters'),
+  body('caseNumber')
+    .notEmpty()
+    .withMessage('Case number is required')
+    .isLength({ max: 50 })
+    .withMessage('Case number cannot exceed 50 characters'),
   body('title')
     .notEmpty()
     .withMessage('Case title is required')
@@ -147,8 +162,8 @@ router.post('/', [
     .notEmpty()
     .withMessage('Client name cannot be empty'),
   body('category')
-    .isIn(['financial', 'deeds', 'criminal', 'civil', 'family', 'corporate'])
-    .withMessage('Invalid category'),
+    .notEmpty()
+    .withMessage('Category is required'),
   body('subcategory')
     .notEmpty()
     .withMessage('Subcategory is required'),
@@ -181,6 +196,9 @@ router.post('/', [
     }
 
     const {
+      referenceNumber,
+      fileNumber,
+      caseNumber,
       title,
       clientNames,
       category,
@@ -192,16 +210,25 @@ router.post('/', [
       judgeAssigned
     } = req.body;
 
-    console.log('✅ Validation passed, generating reference numbers...');
+    console.log('✅ Validation passed');
 
-    // Generate unique reference numbers
-    const referenceNumber = await Case.generateReferenceNumber();
-    const fileNumber = await Case.generateFileNumber();
-    const caseNumber = await Case.generateCaseNumber();
+    // Check for duplicate reference numbers
+    const existingCase = await Case.findOne({
+      $or: [
+        { referenceNumber },
+        { fileNumber },
+        { caseNumber }
+      ]
+    });
 
-    console.log('📋 Generated numbers:', { referenceNumber, fileNumber, caseNumber });
+    if (existingCase) {
+      return res.status(400).json({
+        success: false,
+        message: 'A case with this reference number, file number, or case number already exists'
+      });
+    }
 
-    // Create new case
+    // Create new case with manual reference numbers
     const newCase = new Case({
       referenceNumber,
       fileNumber,
@@ -248,6 +275,16 @@ router.post('/', [
 
   } catch (error) {
     console.error('❌ Create case error:', error);
+    
+    // Handle duplicate key errors
+    if (error.code === 11000) {
+      const field = Object.keys(error.keyPattern)[0];
+      return res.status(400).json({
+        success: false,
+        message: `A case with this ${field} already exists`
+      });
+    }
+
     res.status(500).json({
       success: false,
       message: 'Error creating case',
@@ -260,6 +297,18 @@ router.post('/', [
 // @route   PUT /api/cases/:id
 // @access  Private
 router.put('/:id', [
+  body('referenceNumber')
+    .optional()
+    .isLength({ max: 50 })
+    .withMessage('Reference number cannot exceed 50 characters'),
+  body('fileNumber')
+    .optional()
+    .isLength({ max: 50 })
+    .withMessage('File number cannot exceed 50 characters'),
+  body('caseNumber')
+    .optional()
+    .isLength({ max: 50 })
+    .withMessage('Case number cannot exceed 50 characters'),
   body('title')
     .optional()
     .isLength({ max: 200 })
@@ -268,10 +317,6 @@ router.put('/:id', [
     .optional()
     .isArray({ min: 1 })
     .withMessage('At least one client name is required'),
-  body('category')
-    .optional()
-    .isIn(['financial', 'deeds', 'criminal', 'civil', 'family', 'corporate'])
-    .withMessage('Invalid category'),
   body('description')
     .optional()
     .isLength({ max: 1000 })
@@ -309,6 +354,28 @@ router.put('/:id', [
         success: false,
         message: 'Case not found'
       });
+    }
+
+    // Check for duplicates if reference numbers are being updated
+    if (updates.referenceNumber || updates.fileNumber || updates.caseNumber) {
+      const duplicateCheck = {};
+      if (updates.referenceNumber) duplicateCheck.referenceNumber = updates.referenceNumber;
+      if (updates.fileNumber) duplicateCheck.fileNumber = updates.fileNumber;
+      if (updates.caseNumber) duplicateCheck.caseNumber = updates.caseNumber;
+
+      const existingDuplicate = await Case.findOne({
+        $and: [
+          { _id: { $ne: caseId } },
+          { $or: Object.keys(duplicateCheck).map(key => ({ [key]: duplicateCheck[key] })) }
+        ]
+      });
+
+      if (existingDuplicate) {
+        return res.status(400).json({
+          success: false,
+          message: 'A case with this reference number, file number, or case number already exists'
+        });
+      }
     }
 
     // Track changed fields for audit log
@@ -355,6 +422,16 @@ router.put('/:id', [
 
   } catch (error) {
     console.error('❌ Update case error:', error);
+    
+    // Handle duplicate key errors
+    if (error.code === 11000) {
+      const field = Object.keys(error.keyPattern)[0];
+      return res.status(400).json({
+        success: false,
+        message: `A case with this ${field} already exists`
+      });
+    }
+
     res.status(500).json({
       success: false,
       message: 'Error updating case'

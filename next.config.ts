@@ -1,7 +1,7 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
-  output: "export",
+  // Remove this line: output: "export",
   images: {
     unoptimized: true,
   },
@@ -10,6 +10,10 @@ const nextConfig: NextConfig = {
   },
   typescript: {
     // ignoreBuildErrors: true,
+  },
+  // Add this to prevent API routes from interfering
+  rewrites: async () => {
+    return [];
   },
 };
 

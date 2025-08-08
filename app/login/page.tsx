@@ -1,7 +1,6 @@
 'use client';
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import { authAPI } from '../../lib/api';
 
 export default function LoginPage() {
   const [formData, setFormData] = useState({
@@ -13,21 +12,53 @@ export default function LoginPage() {
   const [error, setError] = useState('');
   const router = useRouter();
 
+  // Clear any existing auth data when login page loads
+  useEffect(() => {
+    localStorage.removeItem('user');
+    localStorage.removeItem('token');
+  }, []);
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsLoading(true);
     setError('');
     
     try {
-      const response = await authAPI.login(formData.email, formData.password, formData.role);
+      const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5001/api';
       
-      if (response.success) {
+      const response = await fetch(`${API_BASE_URL}/auth/login`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          email: formData.email,
+          password: formData.password,
+          role: formData.role
+        }),
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.message || 'Login failed');
+      }
+
+      if (data.success && data.data.token) {
+        // Store auth data
+        localStorage.setItem('token', data.data.token);
+        localStorage.setItem('user', JSON.stringify(data.data.user));
+        
+        console.log('Login successful, redirecting to dashboard');
+        
         // Redirect to dashboard
         router.push('/dashboard');
+      } else {
+        throw new Error('Invalid response from server');
       }
     } catch (error: any) {
-      setError(error.message || 'Login failed. Please check your credentials.');
       console.error('Login error:', error);
+      setError(error.message || 'Login failed. Please check your credentials.');
     } finally {
       setIsLoading(false);
     }
@@ -104,23 +135,17 @@ export default function LoginPage() {
           </button>
         </form>
 
-        <div className="mt-6 text-center">
-          <p className="text-sm text-gray-600 mb-4">Demo credentials for testing:</p>
-          <div className="text-xs text-gray-500 space-y-2 bg-gray-50 p-4 rounded-lg">
-            <div>
-              <p className="font-medium">Super Admin:</p>
-              <p>superadmin@lawfirm.com / SuperAdmin@123</p>
-            </div>
-            <div>
-              <p className="font-medium">Admin:</p>
-              <p>admin1@lawfirm.com / Admin1@123</p>
-            </div>
-            <div>
-              <p className="font-medium">Staff:</p>
-              <p>Create staff accounts through admin panel</p>
+        {/* Development credentials hint */}
+        {process.env.NODE_ENV === 'development' && (
+          <div className="mt-6 p-4 bg-yellow-50 border border-yellow-200 rounded-lg">
+            <p className="text-yellow-800 text-xs font-medium mb-2">Development Credentials:</p>
+            <div className="text-xs text-yellow-700 space-y-1">
+              <div><strong>Super Admin:</strong> superadmin@lawfirm.com / SuperAdmin123!</div>
+              <div><strong>Admin:</strong> admin1@lawfirm.com / Admin123!</div>
+              <div><strong>Staff:</strong> Create via admin panel</div>
             </div>
           </div>
-        </div>
+        )}
       </div>
     </div>
   );

@@ -3,38 +3,103 @@ import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import DashboardHeader from '../../../dashboard/DashboardHeader';
+import { casesAPI } from '../../../../lib/api';
 
-export default function EditCasePage({ params }: { params: { id: string } }) {
+interface EditCasePageProps {
+  params: Promise<{ id: string }>;
+}
+
+export default function EditCasePage({ params }: EditCasePageProps) {
   const [user, setUser] = useState<any>(null);
   const [loading, setLoading] = useState(true);
+  const [submitting, setSubmitting] = useState(false);
+  const [caseId, setCaseId] = useState<string>('');
   const [formData, setFormData] = useState({
-    title: 'Loan Settlement Dispute',
-    category: 'financial',
-    subcategory: 'Loan Settlement',
-    clientNames: ['Johnson & Associates', 'ABC Corporation'],
-    description: 'Complex loan settlement case involving multiple parties and significant financial exposure.',
-    priority: 'High',
-    assignedLawyer: 'Sarah Johnson',
-    courtName: 'District Court Central',
-    judgeAssigned: 'Hon. Michael Roberts',
+    title: '',
+    category: '',
+    subcategory: '',
+    clientNames: [''],
+    description: '',
+    priority: 'Medium',
+    assignedLawyer: '',
+    courtName: '',
+    judgeAssigned: '',
     status: 'Active'
   });
   const router = useRouter();
 
   useEffect(() => {
-    const userData = localStorage.getItem('user');
-    if (!userData) {
-      router.push('/login');
-      return;
-    }
-    setUser(JSON.parse(userData));
-    setLoading(false);
-  }, [router]);
+    const initializePage = async () => {
+      // Get case ID from params
+      const resolvedParams = await params;
+      setCaseId(resolvedParams.id);
 
-  const handleSubmit = (e: React.FormEvent) => {
+      // Check authentication
+      const userData = localStorage.getItem('user');
+      if (!userData) {
+        router.push('/login');
+        return;
+      }
+      setUser(JSON.parse(userData));
+
+      // Fetch case data
+      await fetchCaseData(resolvedParams.id);
+    };
+
+    initializePage();
+  }, [params, router]);
+
+  const fetchCaseData = async (id: string) => {
+    try {
+      setLoading(true);
+      const data = await casesAPI.getById(id);
+      const caseData = data.data?.case || data.case || data;
+      
+      setFormData({
+        title: caseData.title || '',
+        category: caseData.category || '',
+        subcategory: caseData.subcategory || '',
+        clientNames: caseData.clientNames || [''],
+        description: caseData.description || '',
+        priority: caseData.priority || 'Medium',
+        assignedLawyer: caseData.assignedLawyer || '',
+        courtName: caseData.courtName || '',
+        judgeAssigned: caseData.judgeAssigned || '',
+        status: caseData.status || 'Active'
+      });
+    } catch (error) {
+      console.error('Error fetching case:', error);
+      alert('Failed to load case data');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    console.log('Updating case:', formData);
-    router.push(`/cases/${params.id}`);
+    setSubmitting(true);
+
+    try {
+      await casesAPI.update(caseId, {
+        title: formData.title,
+        category: formData.category,
+        subcategory: formData.subcategory,
+        clientNames: formData.clientNames.filter(name => name.trim() !== ''),
+        description: formData.description,
+        priority: formData.priority,
+        assignedLawyer: formData.assignedLawyer,
+        courtName: formData.courtName,
+        judgeAssigned: formData.judgeAssigned,
+        status: formData.status
+      });
+
+      router.push(`/cases/${caseId}`);
+    } catch (error) {
+      console.error('Error updating case:', error);
+      alert('Failed to update case');
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   const addClientName = () => {
@@ -66,7 +131,7 @@ export default function EditCasePage({ params }: { params: { id: string } }) {
       <div className="min-h-screen bg-gray-50 flex items-center justify-center">
         <div className="text-center">
           <div className="w-8 h-8 border-4 border-blue-600 border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
-          <p className="text-gray-600">Loading...</p>
+          <p className="text-gray-600">Loading case data...</p>
         </div>
       </div>
     );
@@ -91,7 +156,7 @@ export default function EditCasePage({ params }: { params: { id: string } }) {
       
       <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         <div className="mb-8">
-          <Link href={`/cases/${params.id}`} className="text-blue-600 hover:text-blue-700 text-sm font-medium mb-4 inline-block cursor-pointer">
+          <Link href={`/cases/${caseId}`} className="text-blue-600 hover:text-blue-700 text-sm font-medium mb-4 inline-block cursor-pointer">
             ← Back to Case Details
           </Link>
           <h1 className="text-3xl font-bold text-gray-900 mb-2">Edit Case</h1>
@@ -120,6 +185,7 @@ export default function EditCasePage({ params }: { params: { id: string } }) {
                   value={formData.category}
                   onChange={(e) => setFormData({...formData, category: e.target.value, subcategory: ''})}
                 >
+                  <option value="">Select category</option>
                   {categories.map((category) => (
                     <option key={category.id} value={category.id}>{category.name}</option>
                   ))}
@@ -132,7 +198,9 @@ export default function EditCasePage({ params }: { params: { id: string } }) {
                   className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent pr-8"
                   value={formData.subcategory}
                   onChange={(e) => setFormData({...formData, subcategory: e.target.value})}
+                  disabled={!selectedCategory}
                 >
+                  <option value="">Select subcategory</option>
                   {selectedCategory?.subcategories.map((sub) => (
                     <option key={sub} value={sub}>{sub}</option>
                   ))}
@@ -191,9 +259,9 @@ export default function EditCasePage({ params }: { params: { id: string } }) {
                 rows={4}
                 value={formData.description}
                 onChange={(e) => setFormData({...formData, description: e.target.value})}
-                maxLength={500}
+                maxLength={1000}
               />
-              <p className="text-xs text-gray-500 mt-1">{formData.description.length}/500 characters</p>
+              <p className="text-xs text-gray-500 mt-1">{formData.description.length}/1000 characters</p>
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
@@ -241,14 +309,15 @@ export default function EditCasePage({ params }: { params: { id: string } }) {
             </div>
 
             <div className="flex items-center justify-end space-x-4 pt-6">
-              <Link href={`/cases/${params.id}`} className="px-6 py-3 text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-lg font-medium transition duration-200 whitespace-nowrap cursor-pointer">
+              <Link href={`/cases/${caseId}`} className="px-6 py-3 text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-lg font-medium transition duration-200 whitespace-nowrap cursor-pointer">
                 Cancel
               </Link>
               <button
                 type="submit"
-                className="px-6 py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium transition duration-200 whitespace-nowrap cursor-pointer"
+                disabled={submitting}
+                className="px-6 py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium transition duration-200 whitespace-nowrap cursor-pointer disabled:opacity-50"
               >
-                Update Case
+                {submitting ? 'Updating...' : 'Update Case'}
               </button>
             </div>
           </form>

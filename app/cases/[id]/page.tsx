@@ -1,16 +1,10 @@
-
 import CaseDetail from './CaseDetail';
 
-export async function generateStaticParams() {
-  return [
-    { id: '1' },
-    { id: '2' },
-    { id: '3' },
-    { id: '4' },
-    { id: '5' },
-  ];
+interface CasePageProps {
+  params: Promise<{ id: string }>;
 }
 
-export default function CasePage({ params }: { params: { id: string } }) {
-  return <CaseDetail caseId={params.id} />;
+export default async function CasePage({ params }: CasePageProps) {
+  const { id } = await params;
+  return <CaseDetail caseId={id} />;
 }

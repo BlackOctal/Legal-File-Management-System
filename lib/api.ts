@@ -1,4 +1,4 @@
-// API configuration for backend integration
+// lib/api.ts - Consolidated and enhanced API configuration
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5001/api';
 
 // API utility functions
@@ -22,16 +22,17 @@ const apiRequest = async (endpoint: string, options: RequestInit = {}) => {
   };
 
   try {
+    console.log(`Making API call to: ${API_BASE_URL}${endpoint}`);
     const response = await fetch(`${API_BASE_URL}${endpoint}`, config);
-    const data = await response.json();
-
+    
     if (!response.ok) {
-      throw new Error(data.message || 'An error occurred');
+      const errorData = await response.json().catch(() => ({}));
+      throw new Error(errorData.message || `HTTP ${response.status}: ${response.statusText}`);
     }
 
-    return data;
+    return await response.json();
   } catch (error) {
-    console.error('API Request Error:', error);
+    console.error(`API call failed for ${API_BASE_URL}${endpoint}:`, error);
     throw error;
   }
 };
@@ -66,25 +67,14 @@ export const authAPI = {
       method: 'POST',
       body: JSON.stringify(userData),
     });
-  },
-
-  changePassword: async (currentPassword: string, newPassword: string) => {
-    return await apiRequest('/auth/change-password', {
-      method: 'PUT',
-      body: JSON.stringify({ currentPassword, newPassword }),
-    });
   }
 };
 
 // Cases API
 export const casesAPI = {
-  getAll: async (filters: any = {}) => {
-    const queryParams = new URLSearchParams();
-    Object.keys(filters).forEach(key => {
-      if (filters[key]) queryParams.append(key, filters[key]);
-    });
-    
-    return await apiRequest(`/cases?${queryParams.toString()}`);
+  getAll: async (params?: URLSearchParams) => {
+    const queryString = params ? `?${params.toString()}` : '';
+    return await apiRequest(`/cases${queryString}`);
   },
 
   getById: async (id: string) => {
@@ -111,13 +101,6 @@ export const casesAPI = {
     });
   },
 
-  getByCategory: async (category: string, subcategory?: string) => {
-    const queryParams = new URLSearchParams();
-    if (subcategory) queryParams.append('subcategory', subcategory);
-    
-    return await apiRequest(`/cases/category/${category}?${queryParams.toString()}`);
-  },
-
   getStats: async () => {
     return await apiRequest('/cases/stats/overview');
   }
@@ -125,13 +108,8 @@ export const casesAPI = {
 
 // Hearings API
 export const hearingsAPI = {
-  getByCaseId: async (caseId: string, filters: any = {}) => {
-    const queryParams = new URLSearchParams();
-    Object.keys(filters).forEach(key => {
-      if (filters[key]) queryParams.append(key, filters[key]);
-    });
-    
-    return await apiRequest(`/hearings/case/${caseId}?${queryParams.toString()}`);
+  getByCaseId: async (caseId: string) => {
+    return await apiRequest(`/hearings/case/${caseId}`);
   },
 
   create: async (caseId: string, hearingData: any) => {
@@ -152,22 +130,13 @@ export const hearingsAPI = {
     return await apiRequest(`/hearings/${id}`, {
       method: 'DELETE',
     });
-  },
-
-  getUpcoming: async (days: number = 14) => {
-    return await apiRequest(`/hearings/upcoming?days=${days}`);
   }
 };
 
 // Documents API
 export const documentsAPI = {
-  getByCaseId: async (caseId: string, filters: any = {}) => {
-    const queryParams = new URLSearchParams();
-    Object.keys(filters).forEach(key => {
-      if (filters[key]) queryParams.append(key, filters[key]);
-    });
-    
-    return await apiRequest(`/documents/case/${caseId}?${queryParams.toString()}`);
+  getByCaseId: async (caseId: string) => {
+    return await apiRequest(`/documents/case/${caseId}`);
   },
 
   upload: async (caseId: string, formData: FormData) => {
@@ -181,13 +150,18 @@ export const documentsAPI = {
       body: formData,
     });
 
-    const data = await response.json();
-    
     if (!response.ok) {
-      throw new Error(data.message || 'Upload failed');
+      const errorData = await response.json().catch(() => ({}));
+      throw new Error(errorData.message || 'Upload failed');
     }
 
-    return data;
+    return await response.json();
+  },
+
+  delete: async (id: string) => {
+    return await apiRequest(`/documents/${id}`, {
+      method: 'DELETE',
+    });
   },
 
   download: async (id: string) => {
@@ -204,31 +178,13 @@ export const documentsAPI = {
     }
 
     return response.blob();
-  },
-
-  update: async (id: string, updates: any) => {
-    return await apiRequest(`/documents/${id}`, {
-      method: 'PUT',
-      body: JSON.stringify(updates),
-    });
-  },
-
-  delete: async (id: string) => {
-    return await apiRequest(`/documents/${id}`, {
-      method: 'DELETE',
-    });
   }
 };
 
 // Notes API
 export const notesAPI = {
-  getByCaseId: async (caseId: string, filters: any = {}) => {
-    const queryParams = new URLSearchParams();
-    Object.keys(filters).forEach(key => {
-      if (filters[key]) queryParams.append(key, filters[key]);
-    });
-    
-    return await apiRequest(`/notes/case/${caseId}?${queryParams.toString()}`);
+  getByCaseId: async (caseId: string) => {
+    return await apiRequest(`/notes/case/${caseId}`);
   },
 
   create: async (caseId: string, noteData: any) => {
@@ -252,6 +208,54 @@ export const notesAPI = {
   }
 };
 
+// Categories API (NEW)
+export const categoriesAPI = {
+  getAll: async () => {
+    return await apiRequest('/categories');
+  },
+
+  create: async (categoryData: any) => {
+    return await apiRequest('/categories', {
+      method: 'POST',
+      body: JSON.stringify(categoryData),
+    });
+  },
+
+  update: async (id: string, updates: any) => {
+    return await apiRequest(`/categories/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(updates),
+    });
+  },
+
+  delete: async (id: string) => {
+    return await apiRequest(`/categories/${id}`, {
+      method: 'DELETE',
+    });
+  },
+
+  // Subcategories
+  createSubcategory: async (categoryId: string, subcategoryData: any) => {
+    return await apiRequest(`/categories/${categoryId}/subcategories`, {
+      method: 'POST',
+      body: JSON.stringify(subcategoryData),
+    });
+  },
+
+  updateSubcategory: async (categoryId: string, subcategoryId: string, updates: any) => {
+    return await apiRequest(`/categories/${categoryId}/subcategories/${subcategoryId}`, {
+      method: 'PUT',
+      body: JSON.stringify(updates),
+    });
+  },
+
+  deleteSubcategory: async (categoryId: string, subcategoryId: string) => {
+    return await apiRequest(`/categories/${categoryId}/subcategories/${subcategoryId}`, {
+      method: 'DELETE',
+    });
+  }
+};
+
 // Dashboard API
 export const dashboardAPI = {
   getOverview: async () => {
@@ -264,41 +268,7 @@ export const dashboardAPI = {
 
   getInactiveCases: async () => {
     return await apiRequest('/dashboard/inactive-cases');
-  },
-
-  getRecentActivity: async (days: number = 7) => {
-    return await apiRequest(`/dashboard/recent-activity?days=${days}`);
   }
 };
 
-// Users API
-export const usersAPI = {
-  getAll: async (filters: any = {}) => {
-    const queryParams = new URLSearchParams();
-    Object.keys(filters).forEach(key => {
-      if (filters[key]) queryParams.append(key, filters[key]);
-    });
-    
-    return await apiRequest(`/users?${queryParams.toString()}`);
-  },
-
-  getById: async (id: string) => {
-    return await apiRequest(`/users/${id}`);
-  },
-
-  update: async (id: string, updates: any) => {
-    return await apiRequest(`/users/${id}`, {
-      method: 'PUT',
-      body: JSON.stringify(updates),
-    });
-  },
-
-  delete: async (id: string) => {
-    return await apiRequest(`/users/${id}`, {
-      method: 'DELETE',
-    });
-  }
-};
-
-// Export utility function
 export { apiRequest };

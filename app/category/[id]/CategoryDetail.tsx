@@ -1,9 +1,9 @@
-
 'use client';
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import DashboardHeader from '../../dashboard/DashboardHeader';
+import { casesAPI } from '../../../lib/api';
 
 interface CategoryDetailProps {
   categoryId: string;
@@ -14,54 +14,54 @@ const categoryData: Record<string, any> = {
     name: 'Financial Cases',
     description: 'Manage loan settlements, debt recovery, and bankruptcy cases',
     subcategories: [
-      { id: 'loan-settlement', name: 'Loan Settlements', count: 12, description: 'Mortgage and personal loan settlements' },
-      { id: 'debt-recovery', name: 'Debt Recovery', count: 8, description: 'Collection and recovery cases' },
-      { id: 'bankruptcy', name: 'Bankruptcy', count: 4, description: 'Corporate and personal bankruptcy' }
+      { id: 'loan-settlement', name: 'Loan Settlements', description: 'Mortgage and personal loan settlements', mappedName: 'Loan Settlement' },
+      { id: 'debt-recovery', name: 'Debt Recovery', description: 'Collection and recovery cases', mappedName: 'Debt Recovery' },
+      { id: 'bankruptcy', name: 'Bankruptcy', description: 'Corporate and personal bankruptcy', mappedName: 'Bankruptcy' }
     ]
   },
   deeds: {
     name: 'Property Deeds',
     description: 'Handle property transfers, title disputes, and registrations',
     subcategories: [
-      { id: 'property-transfer', name: 'Property Transfers', count: 10, description: 'Ownership transfer documentation' },
-      { id: 'title-dispute', name: 'Title Disputes', count: 5, description: 'Property ownership disputes' },
-      { id: 'registration', name: 'Registration', count: 3, description: 'Property registration matters' }
+      { id: 'property-transfer', name: 'Property Transfers', description: 'Ownership transfer documentation', mappedName: 'Property Transfer' },
+      { id: 'title-dispute', name: 'Title Disputes', description: 'Property ownership disputes', mappedName: 'Title Dispute' },
+      { id: 'registration', name: 'Registration', description: 'Property registration matters', mappedName: 'Registration' }
     ]
   },
   criminal: {
     name: 'Criminal Cases',
     description: 'Criminal defense, prosecution, and appeals',
     subcategories: [
-      { id: 'defense', name: 'Criminal Defense', count: 7, description: 'Defense representation cases' },
-      { id: 'prosecution', name: 'Prosecution', count: 3, description: 'State prosecution cases' },
-      { id: 'appeals', name: 'Criminal Appeals', count: 2, description: 'Appeal proceedings' }
+      { id: 'defense', name: 'Criminal Defense', description: 'Defense representation cases', mappedName: 'Defense' },
+      { id: 'prosecution', name: 'Prosecution', description: 'State prosecution cases', mappedName: 'Prosecution' },
+      { id: 'appeals', name: 'Criminal Appeals', description: 'Appeal proceedings', mappedName: 'Appeals' }
     ]
   },
   civil: {
     name: 'Civil Litigation',
     description: 'Contract disputes, personal injury, and tort cases',
     subcategories: [
-      { id: 'contract-dispute', name: 'Contract Disputes', count: 15, description: 'Business and personal contracts' },
-      { id: 'personal-injury', name: 'Personal Injury', count: 12, description: 'Accident and injury claims' },
-      { id: 'torts', name: 'Tort Cases', count: 4, description: 'Civil wrong and damages' }
+      { id: 'contract-dispute', name: 'Contract Disputes', description: 'Business and personal contracts', mappedName: 'Contract Dispute' },
+      { id: 'personal-injury', name: 'Personal Injury', description: 'Accident and injury claims', mappedName: 'Personal Injury' },
+      { id: 'torts', name: 'Tort Cases', description: 'Civil wrong and damages', mappedName: 'Torts' }
     ]
   },
   family: {
     name: 'Family Law',
     description: 'Divorce, custody, adoption, and domestic relations',
     subcategories: [
-      { id: 'divorce', name: 'Divorce Cases', count: 8, description: 'Marriage dissolution proceedings' },
-      { id: 'custody', name: 'Child Custody', count: 5, description: 'Child custody and support' },
-      { id: 'adoption', name: 'Adoption', count: 2, description: 'Adoption proceedings' }
+      { id: 'divorce', name: 'Divorce Cases', description: 'Marriage dissolution proceedings', mappedName: 'Divorce' },
+      { id: 'custody', name: 'Child Custody', description: 'Child custody and support', mappedName: 'Custody' },
+      { id: 'adoption', name: 'Adoption', description: 'Adoption proceedings', mappedName: 'Adoption' }
     ]
   },
   corporate: {
     name: 'Corporate Law',
     description: 'Business formation, contracts, and compliance',
     subcategories: [
-      { id: 'formation', name: 'Business Formation', count: 4, description: 'Company setup and structure' },
-      { id: 'contracts', name: 'Corporate Contracts', count: 3, description: 'Business agreements' },
-      { id: 'compliance', name: 'Compliance', count: 2, description: 'Regulatory compliance matters' }
+      { id: 'formation', name: 'Business Formation', description: 'Company setup and structure', mappedName: 'Formation' },
+      { id: 'contracts', name: 'Corporate Contracts', description: 'Business agreements', mappedName: 'Contracts' },
+      { id: 'compliance', name: 'Compliance', description: 'Regulatory compliance matters', mappedName: 'Compliance' }
     ]
   }
 };
@@ -69,6 +69,8 @@ const categoryData: Record<string, any> = {
 export default function CategoryDetail({ categoryId }: CategoryDetailProps) {
   const [user, setUser] = useState<any>(null);
   const [loading, setLoading] = useState(true);
+  const [subcategoryStats, setSubcategoryStats] = useState<Record<string, number>>({});
+  const [error, setError] = useState<string>('');
   const router = useRouter();
 
   useEffect(() => {
@@ -78,8 +80,54 @@ export default function CategoryDetail({ categoryId }: CategoryDetailProps) {
       return;
     }
     setUser(JSON.parse(userData));
-    setLoading(false);
-  }, [router]);
+    fetchSubcategoryStats();
+  }, [router, categoryId]);
+
+  const fetchSubcategoryStats = async () => {
+    try {
+      setLoading(true);
+      setError('');
+      
+      const category = categoryData[categoryId];
+      if (!category) {
+        setError('Category not found');
+        setLoading(false);
+        return;
+      }
+
+      // Fetch case counts for each subcategory using your consolidated casesAPI
+      const stats: Record<string, number> = {};
+      
+      for (const subcategory of category.subcategories) {
+        try {
+          const params = new URLSearchParams({
+            category: categoryId,
+            subcategory: subcategory.mappedName,
+            limit: '1' // We only need the count
+          });
+          
+          console.log(`Fetching stats for ${subcategory.name} with params:`, params.toString());
+          
+          const data = await casesAPI.getAll(params);
+          const totalCases = data.data?.pagination?.totalCases || data.pagination?.totalCases || 0;
+          stats[subcategory.id] = totalCases;
+          
+          console.log(`Subcategory ${subcategory.name}: ${totalCases} cases`);
+        } catch (error) {
+          console.error(`Error fetching stats for ${subcategory.id}:`, error);
+          stats[subcategory.id] = 0;
+        }
+      }
+      
+      setSubcategoryStats(stats);
+      console.log('Final subcategory stats:', stats);
+    } catch (error) {
+      console.error('Error fetching subcategory stats:', error);
+      setError('Failed to load case statistics');
+    } finally {
+      setLoading(false);
+    }
+  };
 
   if (loading) {
     return (
@@ -96,7 +144,20 @@ export default function CategoryDetail({ categoryId }: CategoryDetailProps) {
 
   const category = categoryData[categoryId];
   if (!category) {
-    return <div>Category not found</div>;
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+        <div className="text-center">
+          <div className="text-red-500 mb-4">
+            <i className="ri-error-warning-line text-4xl"></i>
+          </div>
+          <h2 className="text-xl font-semibold text-gray-900 mb-2">Category Not Found</h2>
+          <p className="text-gray-600 mb-4">The requested category could not be found.</p>
+          <Link href="/dashboard" className="text-blue-600 hover:text-blue-700">
+            Back to Dashboard
+          </Link>
+        </div>
+      </div>
+    );
   }
 
   return (
@@ -108,9 +169,28 @@ export default function CategoryDetail({ categoryId }: CategoryDetailProps) {
           <Link href="/dashboard" className="text-blue-600 hover:text-blue-700 text-sm font-medium mb-4 inline-block cursor-pointer">
             ← Back to Dashboard
           </Link>
-          <h1 className="text-3xl font-bold text-gray-900 mb-2">{category.name}</h1>
-          <p className="text-gray-600">{category.description}</p>
+          <div className="flex items-center justify-between">
+            <div>
+              <h1 className="text-3xl font-bold text-gray-900 mb-2">{category.name}</h1>
+              <p className="text-gray-600">{category.description}</p>
+            </div>
+            <Link href="/cases/create" className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg font-medium transition duration-200 whitespace-nowrap cursor-pointer">
+              + New Case
+            </Link>
+          </div>
         </div>
+
+        {error && (
+          <div className="mb-6 p-4 bg-red-50 border border-red-200 rounded-lg">
+            <p className="text-red-700 text-sm">{error}</p>
+            <button 
+              onClick={() => fetchSubcategoryStats()}
+              className="mt-2 text-red-600 hover:text-red-700 text-sm font-medium"
+            >
+              Retry
+            </button>
+          </div>
+        )}
 
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
           {category.subcategories.map((subcategory: any) => (
@@ -120,9 +200,14 @@ export default function CategoryDetail({ categoryId }: CategoryDetailProps) {
                   <div className="w-12 h-12 flex items-center justify-center bg-blue-100 text-blue-600 rounded-lg">
                     <i className="ri-folder-line text-xl"></i>
                   </div>
-                  <span className="bg-gray-100 text-gray-700 px-3 py-1 rounded-full text-sm font-medium">
-                    {subcategory.count} cases
-                  </span>
+                  <div className="text-right">
+                    <span className="bg-gray-100 text-gray-700 px-3 py-1 rounded-full text-sm font-medium">
+                      {subcategoryStats[subcategory.id] !== undefined ? 
+                        `${subcategoryStats[subcategory.id]} cases` : 
+                        'Loading...'
+                      }
+                    </span>
+                  </div>
                 </div>
                 
                 <h3 className="text-lg font-semibold text-gray-900 mb-2">{subcategory.name}</h3>
@@ -135,6 +220,13 @@ export default function CategoryDetail({ categoryId }: CategoryDetailProps) {
             </Link>
           ))}
         </div>
+
+        {category.subcategories.length === 0 && (
+          <div className="text-center py-12">
+            <i className="ri-folder-open-line text-4xl text-gray-400 mb-4"></i>
+            <p className="text-gray-600">No subcategories found in this category</p>
+          </div>
+        )}
       </div>
     </div>
   );
