@@ -1,4 +1,3 @@
-
 'use client';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
@@ -16,6 +15,7 @@ export default function DashboardHeader({ user }: DashboardHeaderProps) {
 
   const handleLogout = () => {
     localStorage.removeItem('user');
+    localStorage.removeItem('token');
     router.push('/login');
   };
 
@@ -58,6 +58,16 @@ export default function DashboardHeader({ user }: DashboardHeaderProps) {
             <Link href="/cases" className="text-gray-700 hover:text-gray-900 cursor-pointer">
               All Cases
             </Link>
+            <Link href="https://cd-coperation-chat-bot.vercel.app/" className="text-gray-700 hover:text-gray-900 cursor-pointer">
+              AI Chat Bot
+            </Link>
+
+            
+          {(['admin', 'super_admin'].includes(user.role)) && (
+          <Link href="/register" className="text-gray-700 hover:text-gray-900 cursor-pointer">
+            Register User
+            </Link>
+          )}
             
             <div className="flex items-center space-x-3">
               <div className="text-right">

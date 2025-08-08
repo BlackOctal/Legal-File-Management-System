@@ -3,77 +3,36 @@ import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import DashboardHeader from '../dashboard/DashboardHeader';
+import { casesAPI } from '../../lib/api';
 
-const mockAllCases = [
-  {
-    id: '1',
-    referenceNumber: 'LC-2024-001',
-    title: 'Loan Settlement Dispute',
-    clientNames: ['Johnson & Associates', 'ABC Corporation'],
-    category: 'Financial',
-    subcategory: 'Loan Settlement',
-    status: 'Active',
-    priority: 'High',
-    nextHearingDate: '2024-12-28',
-    assignedLawyer: 'Sarah Johnson'
-  },
-  {
-    id: '2',
-    referenceNumber: 'LC-2024-002',
-    title: 'Property Transfer Case',
-    clientNames: ['Maria Rodriguez'],
-    category: 'Property Deeds',
-    subcategory: 'Property Transfer',
-    status: 'Active',
-    priority: 'Medium',
-    nextHearingDate: '2024-12-30',
-    assignedLawyer: 'Mike Davis'
-  },
-  {
-    id: '3',
-    referenceNumber: 'LC-2024-003',
-    title: 'Corporate Bankruptcy',
-    clientNames: ['Tech Solutions Inc'],
-    category: 'Financial',
-    subcategory: 'Bankruptcy',
-    status: 'Pending',
-    priority: 'Low',
-    nextHearingDate: null,
-    assignedLawyer: 'Lisa Wang'
-  },
-  {
-    id: '4',
-    referenceNumber: 'LC-2024-004',
-    title: 'Criminal Defense Case',
-    clientNames: ['Robert Wilson'],
-    category: 'Criminal',
-    subcategory: 'Defense',
-    status: 'Active',
-    priority: 'High',
-    nextHearingDate: '2025-01-15',
-    assignedLawyer: 'James Brown'
-  },
-  {
-    id: '5',
-    referenceNumber: 'LC-2024-005',
-    title: 'Divorce Proceedings',
-    clientNames: ['Sarah Wilson', 'David Wilson'],
-    category: 'Family',
-    subcategory: 'Divorce',
-    status: 'Active',
-    priority: 'Medium',
-    nextHearingDate: '2025-01-10',
-    assignedLawyer: 'Anna Davis'
-  }
-];
+interface Case {
+  _id: string;
+  id: string;
+  referenceNumber: string;
+  title: string;
+  clientNames: string[];
+  category: string;
+  subcategory: string;
+  status: string;
+  priority: string;
+  nextHearingDate?: string;
+  assignedLawyer: string;
+}
 
 export default function AllCasesPage() {
   const [user, setUser] = useState<any>(null);
+  const [cases, setCases] = useState<Case[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
   const [priorityFilter, setPriorityFilter] = useState('all');
   const [categoryFilter, setCategoryFilter] = useState('all');
+  const [pagination, setPagination] = useState({
+    currentPage: 1,
+    totalPages: 1,
+    totalCases: 0
+  });
   const router = useRouter();
 
   useEffect(() => {
@@ -83,32 +42,52 @@ export default function AllCasesPage() {
       return;
     }
     setUser(JSON.parse(userData));
-    setLoading(false);
+    fetchCases();
   }, [router]);
 
-  if (loading) {
-    return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-        <div className="text-center">
-          <div className="w-8 h-8 border-4 border-blue-600 border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
-          <p className="text-gray-600">Loading cases...</p>
-        </div>
-      </div>
-    );
-  }
+  // Separate useEffect for filters to avoid infinite loops
+  useEffect(() => {
+    if (user) {
+      fetchCases();
+    }
+  }, [searchTerm, statusFilter, priorityFilter, categoryFilter]);
 
-  if (!user) return null;
+  const fetchCases = async (page = 1) => {
+    try {
+      setLoading(true);
+      setError(null);
+      
+      const params = new URLSearchParams({
+        page: page.toString(),
+        limit: '10',
+        ...(searchTerm && { search: searchTerm }),
+        ...(statusFilter !== 'all' && { status: statusFilter }),
+        ...(priorityFilter !== 'all' && { priority: priorityFilter }),
+        ...(categoryFilter !== 'all' && { category: categoryFilter })
+      });
 
-  const filteredCases = mockAllCases.filter(case_item => {
-    const matchesSearch = case_item.referenceNumber.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                         case_item.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                         case_item.clientNames.some(name => name.toLowerCase().includes(searchTerm.toLowerCase()));
-    const matchesStatus = statusFilter === 'all' || case_item.status.toLowerCase() === statusFilter;
-    const matchesPriority = priorityFilter === 'all' || case_item.priority.toLowerCase() === priorityFilter;
-    const matchesCategory = categoryFilter === 'all' || case_item.category.toLowerCase().replace(' ', '_') === categoryFilter;
-    
-    return matchesSearch && matchesStatus && matchesPriority && matchesCategory;
-  });
+      console.log('Fetching cases with params:', params.toString());
+      const data = await casesAPI.getAll(params);
+      
+      console.log('API Response:', data);
+      
+      // Handle different response structures
+      const casesData = data.data?.cases || data.cases || [];
+      const paginationData = data.data?.pagination || data.pagination || {
+        currentPage: 1,
+        totalPages: 1,
+        totalCases: casesData.length
+      };
+
+      setCases(casesData);
+      setPagination(paginationData);
+    } catch (error) {
+      console.error('Error fetching cases:', error);
+      setError(error instanceof Error ? error.message : 'Failed to load cases');
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const getPriorityColor = (priority: string) => {
     switch (priority) {
@@ -127,6 +106,19 @@ export default function AllCasesPage() {
       default: return 'bg-blue-100 text-blue-800';
     }
   };
+
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+        <div className="text-center">
+          <div className="w-8 h-8 border-4 border-blue-600 border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
+          <p className="text-gray-600">Loading cases...</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (!user) return null;
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -148,7 +140,23 @@ export default function AllCasesPage() {
           </div>
         </div>
 
+        {error && (
+          <div className="bg-red-50 border border-red-200 rounded-lg p-4 mb-6">
+            <div className="flex items-center">
+              <i className="ri-error-warning-line text-red-500 mr-2"></i>
+              <span className="text-red-700">{error}</span>
+              <button 
+                onClick={() => fetchCases()}
+                className="ml-auto text-red-600 hover:text-red-700 text-sm font-medium"
+              >
+                Retry
+              </button>
+            </div>
+          </div>
+        )}
+
         <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+          {/* Search and Filter Section */}
           <div className="flex flex-col lg:flex-row gap-4 mb-6">
             <div className="flex-1">
               <div className="relative">
@@ -169,9 +177,9 @@ export default function AllCasesPage() {
                 onChange={(e) => setStatusFilter(e.target.value)}
               >
                 <option value="all">All Status</option>
-                <option value="active">Active</option>
-                <option value="pending">Pending</option>
-                <option value="closed">Closed</option>
+                <option value="Active">Active</option>
+                <option value="Pending">Pending</option>
+                <option value="Closed">Closed</option>
               </select>
               <select
                 className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm pr-8"
@@ -179,9 +187,9 @@ export default function AllCasesPage() {
                 onChange={(e) => setPriorityFilter(e.target.value)}
               >
                 <option value="all">All Priority</option>
-                <option value="high">High</option>
-                <option value="medium">Medium</option>
-                <option value="low">Low</option>
+                <option value="High">High</option>
+                <option value="Medium">Medium</option>
+                <option value="Low">Low</option>
               </select>
               <select
                 className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm pr-8"
@@ -190,7 +198,7 @@ export default function AllCasesPage() {
               >
                 <option value="all">All Categories</option>
                 <option value="financial">Financial</option>
-                <option value="property_deeds">Property Deeds</option>
+                <option value="deeds">Property Deeds</option>
                 <option value="criminal">Criminal</option>
                 <option value="civil">Civil</option>
                 <option value="family">Family</option>
@@ -199,6 +207,7 @@ export default function AllCasesPage() {
             </div>
           </div>
 
+          {/* Cases Table */}
           <div className="overflow-x-auto">
             <table className="w-full">
               <thead>
@@ -215,17 +224,17 @@ export default function AllCasesPage() {
                 </tr>
               </thead>
               <tbody>
-                {filteredCases.map((case_item) => (
-                  <tr key={case_item.id} className="border-b border-gray-100 hover:bg-gray-50">
+                {cases.map((case_item) => (
+                  <tr key={case_item._id || case_item.id} className="border-b border-gray-100 hover:bg-gray-50">
                     <td className="py-3 px-2">
-                      <Link href={`/cases/${case_item.id}`} className="text-blue-600 hover:text-blue-700 font-medium cursor-pointer">
+                      <Link href={`/cases/${case_item._id || case_item.id}`} className="text-blue-600 hover:text-blue-700 font-medium cursor-pointer">
                         {case_item.referenceNumber}
                       </Link>
                     </td>
                     <td className="py-3 px-2 text-gray-900 font-medium">{case_item.title}</td>
                     <td className="py-3 px-2">
                       <div className="space-y-1">
-                        {case_item.clientNames.map((name, index) => (
+                        {case_item.clientNames?.map((name, index) => (
                           <div key={index} className="text-sm text-gray-700">{name}</div>
                         ))}
                       </div>
@@ -250,10 +259,10 @@ export default function AllCasesPage() {
                     </td>
                     <td className="py-3 px-2">
                       <div className="flex items-center space-x-2">
-                        <Link href={`/cases/${case_item.id}`} className="text-blue-600 hover:text-blue-700 text-sm cursor-pointer">
+                        <Link href={`/cases/${case_item._id || case_item.id}`} className="text-blue-600 hover:text-blue-700 text-sm cursor-pointer">
                           View
                         </Link>
-                        <Link href={`/cases/${case_item.id}/edit`} className="text-green-600 hover:text-green-700 text-sm cursor-pointer">
+                        <Link href={`/cases/${case_item._id || case_item.id}/edit`} className="text-green-600 hover:text-green-700 text-sm cursor-pointer">
                           Edit
                         </Link>
                       </div>
@@ -264,15 +273,36 @@ export default function AllCasesPage() {
             </table>
           </div>
 
-          {filteredCases.length === 0 && (
+          {cases.length === 0 && !loading && (
             <div className="text-center py-8">
               <i className="ri-folder-open-line text-4xl text-gray-400 mb-4"></i>
               <p className="text-gray-600">No cases found matching your criteria</p>
             </div>
           )}
 
+          {/* Pagination */}
           <div className="mt-6 flex items-center justify-between text-sm text-gray-600">
-            <p>Showing {filteredCases.length} of {mockAllCases.length} cases</p>
+            <p>Showing {cases.length} of {pagination.totalCases} cases</p>
+            
+            {pagination.totalPages > 1 && (
+              <div className="flex items-center space-x-2">
+                <button
+                  onClick={() => fetchCases(pagination.currentPage - 1)}
+                  disabled={pagination.currentPage === 1}
+                  className="px-3 py-1 border border-gray-300 rounded text-sm disabled:opacity-50"
+                >
+                  Previous
+                </button>
+                <span>Page {pagination.currentPage} of {pagination.totalPages}</span>
+                <button
+                  onClick={() => fetchCases(pagination.currentPage + 1)}
+                  disabled={pagination.currentPage === pagination.totalPages}
+                  className="px-3 py-1 border border-gray-300 rounded text-sm disabled:opacity-50"
+                >
+                  Next
+                </button>
+              </div>
+            )}
           </div>
         </div>
       </div>

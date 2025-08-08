@@ -1,13 +1,14 @@
-
 'use client';
 import { useState } from 'react';
+import { hearingsAPI } from '../../../lib/api';
 
 interface AddHearingModalProps {
   caseId: string;
   onClose: () => void;
+  onHearingAdded?: () => void;
 }
 
-export default function AddHearingModal({ caseId, onClose }: AddHearingModalProps) {
+export default function AddHearingModal({ caseId, onClose, onHearingAdded }: AddHearingModalProps) {
   const [formData, setFormData] = useState({
     date: '',
     time: '',
@@ -17,12 +18,48 @@ export default function AddHearingModal({ caseId, onClose }: AddHearingModalProp
     notes: '',
     documentsRequired: ''
   });
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    // Handle hearing creation
-    console.log('Creating hearing:', formData);
-    onClose();
+    setSubmitting(true);
+    setError(null);
+
+    try {
+      console.log('Creating hearing for case:', caseId);
+      console.log('Hearing data:', formData);
+
+      // Call the API
+      const result = await hearingsAPI.create(caseId, formData);
+      console.log('Hearing created successfully:', result);
+
+      // Success - close modal and refresh parent
+      alert('Hearing scheduled successfully!');
+      onClose();
+      if (onHearingAdded) {
+        onHearingAdded();
+      }
+      
+      // Reset form
+      setFormData({
+        date: '',
+        time: '',
+        type: '',
+        judge: '',
+        courtroom: '',
+        notes: '',
+        documentsRequired: ''
+      });
+
+    } catch (error) {
+      console.error('Error creating hearing:', error);
+      const errorMessage = error instanceof Error ? error.message : 'Failed to create hearing';
+      setError(errorMessage);
+      alert(`Error: ${errorMessage}`);
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   const hearingTypes = [
@@ -34,8 +71,12 @@ export default function AddHearingModal({ caseId, onClose }: AddHearingModalProp
     'Final Hearing',
     'Status Conference',
     'Mediation',
-    'Arbitration'
+    'Arbitration',
+    'Case Filing'
   ];
+
+  // Get today's date in YYYY-MM-DD format for min date validation
+  const today = new Date().toISOString().split('T')[0];
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
@@ -51,37 +92,53 @@ export default function AddHearingModal({ caseId, onClose }: AddHearingModalProp
             </button>
           </div>
 
+          {error && (
+            <div className="mb-6 p-4 bg-red-50 border border-red-200 rounded-lg">
+              <p className="text-red-700 text-sm">{error}</p>
+            </div>
+          )}
+
           <form onSubmit={handleSubmit} className="space-y-6">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">Hearing Date</label>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Hearing Date *</label>
                 <input
                   type="date"
                   required
+                  min={today}
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                   value={formData.date}
-                  onChange={(e) => setFormData({...formData, date: e.target.value})}
+                  onChange={(e) => {
+                    console.log('Date changed:', e.target.value);
+                    setFormData({...formData, date: e.target.value});
+                  }}
                 />
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">Time</label>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Time *</label>
                 <input
                   type="time"
                   required
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                   value={formData.time}
-                  onChange={(e) => setFormData({...formData, time: e.target.value})}
+                  onChange={(e) => {
+                    console.log('Time changed:', e.target.value);
+                    setFormData({...formData, time: e.target.value});
+                  }}
                 />
               </div>
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">Hearing Type</label>
+              <label className="block text-sm font-medium text-gray-700 mb-2">Hearing Type *</label>
               <select
                 required
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent pr-8"
                 value={formData.type}
-                onChange={(e) => setFormData({...formData, type: e.target.value})}
+                onChange={(e) => {
+                  console.log('Type changed:', e.target.value);
+                  setFormData({...formData, type: e.target.value});
+                }}
               >
                 <option value="">Select hearing type</option>
                 {hearingTypes.map((type) => (
@@ -92,7 +149,7 @@ export default function AddHearingModal({ caseId, onClose }: AddHearingModalProp
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">Presiding Judge</label>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Presiding Judge *</label>
                 <input
                   type="text"
                   required
@@ -103,7 +160,7 @@ export default function AddHearingModal({ caseId, onClose }: AddHearingModalProp
                 />
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">Courtroom</label>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Courtroom *</label>
                 <input
                   type="text"
                   required
@@ -145,18 +202,25 @@ export default function AddHearingModal({ caseId, onClose }: AddHearingModalProp
               <button
                 type="button"
                 onClick={onClose}
-                className="px-4 py-2 text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-lg transition duration-200 whitespace-nowrap cursor-pointer"
+                disabled={submitting}
+                className="px-4 py-2 text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-lg transition duration-200 whitespace-nowrap cursor-pointer disabled:opacity-50"
               >
                 Cancel
               </button>
               <button
                 type="submit"
-                className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition duration-200 whitespace-nowrap cursor-pointer"
+                disabled={submitting}
+                className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition duration-200 whitespace-nowrap cursor-pointer disabled:opacity-50"
               >
-                Schedule Hearing
+                {submitting ? 'Scheduling...' : 'Schedule Hearing'}
               </button>
             </div>
           </form>
+
+          {/* Debug Info */}
+          <div className="mt-4 p-2 bg-gray-50 rounded text-xs">
+            <strong>Debug:</strong> Case ID: {caseId}, Form Data: {JSON.stringify(formData)}
+          </div>
         </div>
       </div>
     </div>
