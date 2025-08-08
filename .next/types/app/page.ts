@@ -1,4 +1,4 @@
-// File: /Users/janiduhimansa/Downloads/legal file Management/app/page.tsx
+// File: C:\REACT\Final Year Project\New folder (2)\Legal-File-Management-System\app\page.tsx
 import * as entry from '../../../app/page.js'
 import type { ResolvingMetadata, ResolvingViewport } from 'next/dist/lib/metadata/types/metadata-interface.js'
 
