@@ -1,9 +1,5 @@
 {
-  "/login/page": "app/login/page.js",
-  "/cases/[id]/edit/page": "app/cases/[id]/edit/page.js",
-  "/dashboard/page": "app/dashboard/page.js",
   "/cases/[id]/page": "app/cases/[id]/page.js",
   "/cases/page": "app/cases/page.js",
-  "/category/[id]/page": "app/category/[id]/page.js",
-  "/subcategory/[categoryId]/[subcategoryId]/page": "app/subcategory/[categoryId]/[subcategoryId]/page.js"
+  "/dashboard/page": "app/dashboard/page.js"
 }

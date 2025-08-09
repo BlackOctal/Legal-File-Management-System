@@ -266,6 +266,10 @@ export const dashboardAPI = {
     return await apiRequest(`/dashboard/upcoming-hearings?days=${days}`);
   },
 
+  getRequiredDocuments: async () => {
+    return await apiRequest('/dashboard/required-documents');
+  },
+
   getInactiveCases: async () => {
     return await apiRequest('/dashboard/inactive-cases');
   }

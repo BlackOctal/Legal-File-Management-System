@@ -136,7 +136,7 @@ export default function LoginPage() {
         </form>
 
         {/* Development credentials hint */}
-        {process.env.NODE_ENV === 'development' && (
+        {/* {process.env.NODE_ENV === 'development' && (
           <div className="mt-6 p-4 bg-yellow-50 border border-yellow-200 rounded-lg">
             <p className="text-yellow-800 text-xs font-medium mb-2">Development Credentials:</p>
             <div className="text-xs text-yellow-700 space-y-1">
@@ -145,7 +145,7 @@ export default function LoginPage() {
               <div><strong>Staff:</strong> Create via admin panel</div>
             </div>
           </div>
-        )}
+        )} */}
       </div>
     </div>
   );

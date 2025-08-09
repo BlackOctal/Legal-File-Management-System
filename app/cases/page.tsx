@@ -245,8 +245,11 @@ export default function AllCasesPage() {
                     </td>
                     <td className="py-3 px-2 text-gray-700">{case_item.assignedLawyer}</td>
                     <td className="py-3 px-2 text-gray-600 text-sm">
-                      {case_item.nextHearingDate || 'Not scheduled'}
-                    </td>
+                        {case_item.nextHearingDate 
+                          ? new Date(case_item.nextHearingDate).toLocaleDateString()
+                          : 'Not scheduled'
+                        }
+                      </td>
                     <td className="py-3 px-2">
                       <span className={`px-2 py-1 rounded-full text-xs font-medium ${getStatusColor(case_item.status)}`}>
                         {case_item.status}
