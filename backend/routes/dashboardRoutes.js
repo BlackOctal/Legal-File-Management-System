@@ -1,5 +1,6 @@
 const express = require('express');
 const Case = require('../models/Case');
+const Hearing = require('../models/Hearing');
 
 const router = express.Router();
 
@@ -49,6 +50,12 @@ router.get('/overview', async (req, res) => {
       }
     ]);
 
+    // Get upcoming hearings (next 14 days)
+    const upcomingHearings = await Hearing.getUpcomingHearings(14);
+
+    // Get required documents from upcoming hearings
+    const requiredDocuments = await getRequiredDocuments();
+
     // Get inactive cases (>10 months without hearing)
     const inactiveCases = await Case.find({ isInactive: true })
       .sort({ lastHearingDate: 1 })
@@ -68,7 +75,8 @@ router.get('/overview', async (req, res) => {
     console.log('✅ Dashboard data fetched successfully');
     console.log('Case stats:', caseStats[0]);
     console.log('Category counts:', categoryCounts.length);
-    console.log('Inactive cases:', inactiveCases.length);
+    console.log('Upcoming hearings:', upcomingHearings.length);
+    console.log('Required documents:', requiredDocuments.length);
 
     res.json({
       success: true,
@@ -82,7 +90,8 @@ router.get('/overview', async (req, res) => {
           highPriorityCases: 0
         },
         categoryCounts,
-        upcomingHearings: [], // Will be populated when hearing system is complete
+        upcomingHearings,
+        requiredDocuments,
         inactiveCases,
         recentCases
       }
@@ -104,16 +113,31 @@ router.get('/upcoming-hearings', async (req, res) => {
   try {
     console.log('📅 GET /api/dashboard/upcoming-hearings');
     
-    // For now, return empty array until hearing system is implemented
+    const { days = 14 } = req.query;
+    
+    const upcomingHearings = await Hearing.getUpcomingHearings(parseInt(days));
+
+    // Group hearings by urgency
+    const now = new Date();
+    const tomorrow = new Date(now.getTime() + (24 * 60 * 60 * 1000));
+    const nextWeek = new Date(now.getTime() + (7 * 24 * 60 * 60 * 1000));
+
+    const groupedHearings = {
+      urgent: upcomingHearings.filter(hearing => new Date(hearing.date) <= tomorrow),
+      thisWeek: upcomingHearings.filter(hearing => {
+        const hearingDate = new Date(hearing.date);
+        return hearingDate > tomorrow && hearingDate <= nextWeek;
+      }),
+      upcoming: upcomingHearings.filter(hearing => new Date(hearing.date) > nextWeek)
+    };
+
+    console.log(`✅ Found ${upcomingHearings.length} upcoming hearings`);
+
     res.json({
       success: true,
       data: { 
-        hearings: [],
-        groupedHearings: {
-          urgent: [],
-          thisWeek: [],
-          upcoming: []
-        }
+        hearings: upcomingHearings,
+        groupedHearings
       }
     });
 
@@ -125,6 +149,113 @@ router.get('/upcoming-hearings', async (req, res) => {
     });
   }
 });
+
+// @desc    Get required documents for upcoming hearings
+// @route   GET /api/dashboard/required-documents
+// @access  Private
+router.get('/required-documents', async (req, res) => {
+  try {
+    console.log('📋 GET /api/dashboard/required-documents');
+    
+    const requiredDocuments = await getRequiredDocuments();
+    
+    console.log(`✅ Found ${requiredDocuments.length} required documents`);
+
+    res.json({
+      success: true,
+      data: { requiredDocuments }
+    });
+
+  } catch (error) {
+    console.error('❌ Get required documents error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Error fetching required documents'
+    });
+  }
+});
+
+// Helper function to get required documents from upcoming hearings
+const getRequiredDocuments = async () => {
+  try {
+    // Get hearings in the next 30 days that have documentsRequired
+    const thirtyDaysFromNow = new Date();
+    thirtyDaysFromNow.setDate(thirtyDaysFromNow.getDate() + 30);
+    
+    const hearingsWithDocs = await Hearing.find({
+      date: {
+        $gte: new Date(),
+        $lte: thirtyDaysFromNow
+      },
+      status: 'Scheduled',
+      documentsRequired: { $exists: true, $ne: '', $ne: null }
+    })
+    .populate('caseId', 'referenceNumber title')
+    .sort({ date: 1 });
+
+    console.log(`Found ${hearingsWithDocs.length} hearings with documents required`);
+
+    // Transform hearings into required documents format
+    const requiredDocuments = [];
+    
+    for (const hearing of hearingsWithDocs) {
+      if (hearing.documentsRequired && hearing.caseId) {
+        console.log(`Processing hearing ${hearing._id} with docs: ${hearing.documentsRequired}`);
+        
+        // Split documents by common separators and create separate entries
+        const documents = hearing.documentsRequired
+          .split(/[,;|\n]/) // Split by comma, semicolon, pipe, or newline
+          .map(doc => doc.trim())
+          .filter(doc => doc.length > 0);
+
+        console.log(`Split into ${documents.length} documents:`, documents);
+
+        for (let i = 0; i < documents.length; i++) {
+          const document = documents[i];
+          requiredDocuments.push({
+            id: `${hearing._id}-${i}`, // Use index to ensure unique IDs
+            caseNumber: hearing.caseId.referenceNumber,
+            caseTitle: hearing.caseId.title,
+            caseId: hearing.caseId._id,
+            hearingId: hearing._id,
+            document: document,
+            dueDate: hearing.date.toISOString().split('T')[0], // Format as YYYY-MM-DD
+            hearingType: hearing.type,
+            status: 'pending',
+            urgency: getDaysUntilDue(hearing.date)
+          });
+        }
+      }
+    }
+
+    const getDaysUntilDue = (dueDate) => {
+  const now = new Date();
+  const due = new Date(dueDate);
+  const diffTime = due.getTime() - now.getTime();
+  const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+  
+  if (diffDays < 0) return 'overdue';
+  if (diffDays === 0) return 'today';
+  if (diffDays === 1) return 'tomorrow';
+  if (diffDays <= 3) return 'urgent';
+  if (diffDays <= 7) return 'this-week';
+  return 'upcoming';
+};
+
+
+    console.log(`Total required documents: ${requiredDocuments.length}`);
+
+    // Sort by urgency (closest dates first)
+    requiredDocuments.sort((a, b) => new Date(a.dueDate) - new Date(b.dueDate));
+
+    return requiredDocuments;
+  } catch (error) {
+    console.error('Error getting required documents:', error);
+    return [];
+  }
+
+  
+};
 
 // @desc    Get inactive cases
 // @route   GET /api/dashboard/inactive-cases

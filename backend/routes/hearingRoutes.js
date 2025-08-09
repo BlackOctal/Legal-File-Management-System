@@ -175,6 +175,21 @@ router.post('/case/:caseId', [
 
     await hearing.save();
 
+        // Manually trigger case update for next hearing date
+    const Case = require('../models/Case');
+    const caseDoc = await Case.findById(caseId);
+    if (caseDoc) {
+      const nextHearing = await Hearing.findOne({
+        caseId: caseId,
+        status: 'Scheduled',
+        date: { $gte: new Date() }
+      }).sort({ date: 1 });
+      
+      caseDoc.nextHearingDate = nextHearing ? nextHearing.date : null;
+      await caseDoc.save();
+      console.log(`✅ Updated case ${caseDoc.referenceNumber} next hearing date: ${caseDoc.nextHearingDate}`);
+    }
+
     // Populate hearing
     const populatedHearing = await Hearing.findById(hearing._id)
       .populate('createdBy', 'name')

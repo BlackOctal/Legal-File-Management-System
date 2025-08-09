@@ -175,18 +175,21 @@ hearingSchema.pre('save', async function(next) {
       const caseDoc = await Case.findById(this.caseId);
       
       if (caseDoc) {
-        // Update next hearing date if this is a scheduled hearing in the future
-        if (this.status === 'Scheduled' && new Date(this.date) > new Date()) {
-          const nextHearing = await mongoose.model('Hearing').findOne({
-            caseId: this.caseId,
-            status: 'Scheduled',
-            date: { $gte: new Date() }
-          }).sort({ date: 1 });
-          
-          caseDoc.nextHearingDate = nextHearing ? nextHearing.date : null;
-        }
+        console.log(`Updating case ${caseDoc.referenceNumber} hearing dates...`);
         
-        // Update last hearing date if this hearing is completed
+        // Always recalculate next hearing date for scheduled hearings
+        const nextHearing = await mongoose.model('Hearing').findOne({
+          caseId: this.caseId,
+          status: 'Scheduled',
+          date: { $gte: new Date() }
+        }).sort({ date: 1 });
+        
+        const previousNextDate = caseDoc.nextHearingDate;
+        caseDoc.nextHearingDate = nextHearing ? nextHearing.date : null;
+        
+        console.log(`Next hearing updated: ${previousNextDate} -> ${caseDoc.nextHearingDate}`);
+        
+        // Update last hearing date for completed hearings
         if (this.status === 'Completed') {
           const lastHearing = await mongoose.model('Hearing').findOne({
             caseId: this.caseId,
@@ -194,9 +197,11 @@ hearingSchema.pre('save', async function(next) {
           }).sort({ date: -1 });
           
           caseDoc.lastHearingDate = lastHearing ? lastHearing.date : null;
+          console.log(`Last hearing updated: ${caseDoc.lastHearingDate}`);
         }
         
         await caseDoc.save();
+        console.log(`✅ Case ${caseDoc.referenceNumber} hearing dates updated successfully`);
       }
     } catch (error) {
       console.error('Error updating case hearing dates:', error);
@@ -204,6 +209,7 @@ hearingSchema.pre('save', async function(next) {
   }
   next();
 });
+
 
 // Ensure virtual fields are serialized
 hearingSchema.set('toJSON', { virtuals: true });
